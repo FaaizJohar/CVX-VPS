@@ -25,6 +25,7 @@ RUN pip install --no-cache-dir \
     "httpx>=0.28.0" \
     "orjson>=3.10.0" \
     "structlog>=24.4.0" \
+    "python-json-logger>=3.1.0" \
     "websockets>=13.0" \
     "cryptography>=43.0"
 
