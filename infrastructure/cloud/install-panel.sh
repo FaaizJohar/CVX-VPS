@@ -22,7 +22,8 @@
 # Env vars:
 #   CVX_CF_TUNNEL_TOKEN   Cloudflare Tunnel token (managed tunnel)
 #   CVX_PANEL_DOMAIN      Public hostname (sets CVX_PUBLIC_BASE_URL)
-#   CVX_OWNER_EMAIL       Bootstrap owner email    (default: admin@cvx.local)
+#   CVX_OWNER_EMAIL       Bootstrap owner email    (default: admin@example.com —
+#                         must be a valid domain: .local/.test etc. are rejected)
 #   CVX_OWNER_PASSWORD    Bootstrap owner password (default: random, saved to .env)
 #   REPO_URL              Source repo              (default: this project)
 #   CVX_INSTALL_DIR       Install location         (default: /opt/cvx-panel)
@@ -35,7 +36,7 @@ REPO_URL="${REPO_URL:-https://github.com/FaaizJohar/CVX-VPS.git}"
 INSTALL_DIR="${CVX_INSTALL_DIR:-/opt/cvx-panel}"
 CF_TOKEN="${CVX_CF_TUNNEL_TOKEN:-}"
 PANEL_DOMAIN="${CVX_PANEL_DOMAIN:-}"
-OWNER_EMAIL="${CVX_OWNER_EMAIL:-admin@cvx.local}"
+OWNER_EMAIL="${CVX_OWNER_EMAIL:-admin@example.com}"
 OWNER_PASSWORD="${CVX_OWNER_PASSWORD:-}"
 BIND="127.0.0.1:8080"
 CLOUDFLARED_BIN=/usr/local/bin/cloudflared
