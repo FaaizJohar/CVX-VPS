@@ -1,0 +1,72 @@
+# CVX Panel — full stack (API + web + Postgres + Redis).
+# For local development use docker-compose.dev.yml (database services only).
+#
+#   cp .env.example .env   # then edit secrets
+#   docker compose -f infrastructure/docker-compose.prod.yml up -d --build
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${CVX_DB_USER:-cvx}
+      POSTGRES_PASSWORD: ${CVX_DB_PASSWORD:?set CVX_DB_PASSWORD}
+      POSTGRES_DB: ${CVX_DB_NAME:-cvx}
+    volumes:
+      - cvx_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${CVX_DB_USER:-cvx}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [cvx]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - cvx_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [cvx]
+
+  api:
+    build: ../apps/api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      CVX_ENVIRONMENT: production
+      CVX_DATABASE_URL: postgresql+asyncpg://${CVX_DB_USER:-cvx}:${CVX_DB_PASSWORD}@postgres:5432/${CVX_DB_NAME:-cvx}
+      CVX_REDIS_URL: redis://redis:6379/0
+      CVX_SECRET_KEY: ${CVX_SECRET_KEY:?set CVX_SECRET_KEY}
+      CVX_PUBLIC_BASE_URL: ${CVX_PUBLIC_BASE_URL:?set CVX_PUBLIC_BASE_URL}
+      CVX_BEHIND_PROXY: "true"
+      CVX_SESSION_COOKIE_SECURE: ${CVX_SESSION_COOKIE_SECURE:-true}
+      CVX_BOOTSTRAP_OWNER_EMAIL: ${CVX_BOOTSTRAP_OWNER_EMAIL:-}
+      CVX_BOOTSTRAP_OWNER_PASSWORD: ${CVX_BOOTSTRAP_OWNER_PASSWORD:-}
+    expose:
+      - "8000"
+    networks: [cvx]
+
+  web:
+    build: ../apps/web
+    restart: unless-stopped
+    depends_on: [api]
+    ports:
+      - "${CVX_HTTP_PORT:-80}:80"
+    networks: [cvx]
+
+volumes:
+  cvx_pgdata:
+  cvx_redisdata:
+
+networks:
+  cvx:
