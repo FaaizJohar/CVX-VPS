@@ -41,6 +41,23 @@ class InstanceState:
     raw: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(slots=True)
+class ConsoleTarget:
+    """Where and how to attach a console relay.
+
+    kind="agent"   — connect to the node agent's websocket at `url` with the
+                     node credential as bearer token; JSON control frames.
+    kind="lxd"     — speak LXD's exec websocket protocol directly over the
+                     unix socket at `socket_path`; `fd_secrets` maps fd names
+                     ("0", "control", ...) to per-fd websocket secrets.
+    """
+
+    kind: str  # "agent" | "lxd"
+    url: str | None = None
+    socket_path: str | None = None
+    fd_secrets: dict[str, str] = field(default_factory=dict)
+
+
 class ComputeProvider(ABC):
     """Operations the control plane can perform on a node's compute backend."""
 
@@ -106,6 +123,6 @@ class ComputeProvider(ABC):
     @abstractmethod
     async def restore_backup(self, name: str, backup_path: str) -> dict[str, Any]: ...
 
-    # Console — returns a websocket URL on the agent to connect to.
+    # Console — returns everything needed to relay a terminal session.
     @abstractmethod
-    def console_ws_url(self, name: str) -> str: ...
+    async def console_target(self, name: str, cols: int, rows: int) -> ConsoleTarget: ...

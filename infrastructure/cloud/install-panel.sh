@@ -53,7 +53,10 @@ if [ "${1:-}" = "--uninstall" ]; then
   rm -f "$QUICK_TUNNEL_UNIT"
   cloudflared service uninstall 2>/dev/null || true
   if [ -d "$INSTALL_DIR" ]; then
-    (cd "$INSTALL_DIR" && docker compose down -v) || true
+    UN_COMPOSE="-f infrastructure/docker-compose.prod.yml"
+    [ -f "$INSTALL_DIR/infrastructure/docker-compose.local.yml" ] && \
+      UN_COMPOSE="$UN_COMPOSE -f infrastructure/docker-compose.local.yml"
+    (cd "$INSTALL_DIR" && docker compose $UN_COMPOSE down -v) || true
   fi
   rm -rf "$INSTALL_DIR"
   log "Removed (Docker itself left intact)."
@@ -105,18 +108,34 @@ EOF
 fi
 set -a; . ./.env; set +a
 
+# ------------------------------------------------------- local deployment --
+# When the host itself runs LXD, mount its socket and enable "Deploy on this
+# machine" so users can provision VPSes without enrolling any remote node.
+COMPOSE="-f infrastructure/docker-compose.prod.yml"
+LXD_SOCK=""
+for cand in /var/snap/lxd/common/lxd/unix.socket /var/lib/lxd/unix.socket; do
+  [ -S "$cand" ] && { LXD_SOCK="$cand"; break; }
+done
+if [ -n "$LXD_SOCK" ]; then
+  log "Host LXD detected at $LXD_SOCK — enabling local deployment mode."
+  grep -q '^CVX_LXD_SOCKET_HOST=' .env || echo "CVX_LXD_SOCKET_HOST=$LXD_SOCK" >> .env
+  COMPOSE="$COMPOSE -f infrastructure/docker-compose.local.yml"
+else
+  log "No host LXD found — local deployment stays disabled (nodes only)."
+fi
+
 # ------------------------------------------------------------------- stack --
 log "Building and starting the stack (first build takes a few minutes)..."
-docker compose -f infrastructure/docker-compose.prod.yml up -d --build
+docker compose $COMPOSE up -d --build
 
 log "Waiting for the control plane to become ready..."
 for i in $(seq 1 60); do
-  if docker compose -f infrastructure/docker-compose.prod.yml exec -T api \
+  if docker compose $COMPOSE exec -T api \
       python -c "import urllib.request;urllib.request.urlopen('http://localhost:8000/readyz',timeout=3)" \
       >/dev/null 2>&1; then
     break
   fi
-  [ "$i" -eq 60 ] && { docker compose -f infrastructure/docker-compose.prod.yml logs --tail 40 api; die "API did not become ready."; }
+  [ "$i" -eq 60 ] && { docker compose $COMPOSE logs --tail 40 api; die "API did not become ready."; }
   sleep 5
 done
 log "Control plane is READY."
@@ -180,5 +199,6 @@ fi
 echo
 echo " Owner login:   $OWNER_EMAIL"
 grep -q '^CVX_BOOTSTRAP_OWNER_PASSWORD=' .env && echo " Owner password: stored in $INSTALL_DIR/.env (chmod 600)"
-echo " Manage:        cd $INSTALL_DIR && docker compose -f infrastructure/docker-compose.prod.yml logs -f api"
+[ -n "$LXD_SOCK" ] && echo " Local deploy:  enabled (host LXD at $LXD_SOCK)"
+echo " Manage:        cd $INSTALL_DIR && docker compose $COMPOSE logs -f api"
 echo " Uninstall:     sudo bash $INSTALL_DIR/infrastructure/cloud/install-panel.sh --uninstall"

@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import type { VPS } from "@/types";
 import { Stat, Card, CardHeader } from "@/components/ui/Card";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { ModeBadge } from "@/components/ui/ModeBadge";
 import { PageLoader } from "@/components/ui/Loading";
 import { fmtRelative } from "@/lib/format";
 
@@ -117,7 +118,7 @@ export default function OverviewPage() {
                 className="flex items-center justify-between px-4 py-3 hover:bg-cvx-raised/50"
               >
                 <div>
-                  <p className="font-mono text-sm">{v.name}</p>
+                  <p className="font-mono text-sm">{v.name} <ModeBadge mode={v.deployment_mode} className="ml-1" /></p>
                   <p className="text-xs text-cvx-faint">{v.ipv4 ?? v.hostname}</p>
                 </div>
                 <StatusBadge status={v.status} />

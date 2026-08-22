@@ -9,7 +9,12 @@ import json
 from typing import Any
 
 from app.providers.agent_client import AgentClient
-from app.providers.base import ComputeProvider, InstanceSpec, InstanceState
+from app.providers.base import (
+    ComputeProvider,
+    ConsoleTarget,
+    InstanceSpec,
+    InstanceState,
+)
 
 
 def build_cloud_init_user_data(
@@ -186,3 +191,6 @@ class LXDProvider(ComputeProvider):
 
     def console_ws_url(self, name: str) -> str:
         return self.client.ws_url(f"/v1/instances/{name}/console")
+
+    async def console_target(self, name: str, cols: int, rows: int) -> ConsoleTarget:
+        return ConsoleTarget(kind="agent", url=self.console_ws_url(name))

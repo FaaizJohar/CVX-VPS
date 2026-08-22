@@ -28,6 +28,13 @@ class NodeStatus(str, enum.Enum):
     REMOVED = "removed"
 
 
+# Node kinds: "agent" nodes are enrolled remote hosts running cvx-agent;
+# the single "local" node is the control-plane host itself (LXD accessed
+# directly over its unix socket — no agent).
+NODE_KIND_AGENT = "agent"
+NODE_KIND_LOCAL = "local"
+
+
 class Node(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "nodes"
 
@@ -36,6 +43,12 @@ class Node(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     hostname: Mapped[str] = mapped_column(String(255), nullable=False)
     public_ip: Mapped[str] = mapped_column(String(64), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+
+    # "agent" (default) or "local" — the control-plane host itself.
+    kind: Mapped[str] = mapped_column(
+        String(16), default=NODE_KIND_AGENT, server_default=NODE_KIND_AGENT,
+        nullable=False,
+    )
 
     status: Mapped[NodeStatus] = mapped_column(
         String(16), default=NodeStatus.PENDING, nullable=False, index=True

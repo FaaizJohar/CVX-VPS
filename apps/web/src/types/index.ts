@@ -17,6 +17,7 @@ export interface NodeInfo {
   public_ip: string;
   description: string;
   status: string;
+  kind?: "agent" | "local";
   agent_version: string | null;
   lxd_version: string | null;
   os_name: string | null;
@@ -45,6 +46,7 @@ export interface VPS {
   name: string;
   hostname: string;
   status: string;
+  deployment_mode?: "node" | "local";
   cpu_limit: number;
   ram_mb: number;
   swap_mb: number;
@@ -136,4 +138,18 @@ export interface MetricPoint {
   disk_write_bps: number | null;
   net_rx_bps: number | null;
   net_tx_bps: number | null;
+}
+
+export interface LocalStatus {
+  available: boolean;
+  reason?: "disabled" | "no_lxd_socket" | "lxd_unreachable";
+  node_id?: string | null;
+  cpu_cores?: number;
+  ram_total_mb?: number;
+  storage_total_gb?: number;
+  storage_used_gb?: number;
+  socket_path?: string;
+  lxd_version?: string;
+  os_name?: string;
+  hostname?: string;
 }

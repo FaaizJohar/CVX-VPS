@@ -17,10 +17,11 @@ from app.core.logging import setup_logging
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     setup_logging()
-    from app.bootstrap import ensure_owner_account
+    from app.bootstrap import ensure_local_node, ensure_owner_account
 
     try:
         await ensure_owner_account()
+        await ensure_local_node()
     except Exception:
         # Database may not be migrated yet (e.g. first alembic run); don't crash.
         pass

@@ -43,8 +43,13 @@ class FakeProvider:
     async def restore_snapshot(self, *a, **k): return {}
     async def list_snapshots(self, name: str): return []
     async def create_backup(self, *a, **k): return {}
-    async def delete_backup(self, *a, **k): return None
-    def console_ws_url(self, name: str): return f"wss://agent/v1/instances/{name}/console"
+    async def restore_backup(self, *a, **k): return {}
+    async def console_target(self, name: str, cols: int, rows: int):
+        from app.providers.base import ConsoleTarget
+
+        return ConsoleTarget(
+            kind="agent", url=f"wss://agent/v1/instances/{name}/console"
+        )
 
 
 @pytest.fixture

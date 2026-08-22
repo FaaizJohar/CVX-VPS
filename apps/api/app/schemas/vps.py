@@ -1,8 +1,9 @@
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
+from pydantic import model_validator
 
 from app.schemas.user import ORMModel
 
@@ -10,7 +11,10 @@ VALID_HOSTNAME = r"^[a-zA-Z0-9][a-zA-Z0-9.-]*$"
 
 
 class VPSCreate(BaseModel):
-    node_id: uuid.UUID
+    # Deployment target: "node" (default) requires node_id; "local" deploys on
+    # the control-plane host itself and must not carry a node_id.
+    deployment_mode: Literal["node", "local"] = "node"
+    node_id: uuid.UUID | None = None
     image_id: uuid.UUID
     name: str = Field(min_length=2, max_length=64, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
     hostname: str = Field(min_length=1, max_length=255, pattern=VALID_HOSTNAME)
@@ -62,6 +66,14 @@ class VPSCreate(BaseModel):
                 raise ValueError(f"unsupported ssh key type: {keytype!r}")
         return v
 
+    @model_validator(mode="after")
+    def validate_target(self) -> "VPSCreate":
+        if self.deployment_mode == "node" and self.node_id is None:
+            raise ValueError("node_id is required when deployment_mode is 'node'.")
+        if self.deployment_mode == "local" and self.node_id is not None:
+            raise ValueError("node_id must be omitted when deployment_mode is 'local'.")
+        return self
+
 
 class VPSOut(ORMModel):
     id: uuid.UUID
@@ -71,6 +83,7 @@ class VPSOut(ORMModel):
     name: str
     hostname: str
     status: str
+    deployment_mode: str = "node"
     cpu_limit: int
     ram_mb: int
     swap_mb: int

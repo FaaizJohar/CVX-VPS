@@ -6,6 +6,11 @@ CVX turns LXD hosts into a multi-tenant VPS cloud: enroll compute nodes, provisi
 virtual private servers in seconds, and manage the full lifecycle — console, snapshots,
 backups, metrics, networking and logs — from a single web interface.
 
+**Two deployment modes (v1.1):** deploy VPSes on enrolled nodes running the CVX
+agent, or — when the panel host itself has LXD — deploy **locally** with zero
+extra setup ("This Machine" in the create wizard; the panel speaks to LXD over
+its unix socket, no agent required). See `docs/V1_1_RELEASE_REPORT.md`.
+
 LXD is deliberately hidden behind an abstraction layer. Users see "VPS", never containers.
 
 ## Architecture
@@ -86,6 +91,9 @@ install; `--uninstall` removes everything.
 - `api` runs Alembic migrations on start, then uvicorn behind proxy headers.
 - Put a TLS terminator (Caddy, Traefik, cloud LB) in front of `web`;
   set `CVX_SESSION_COOKIE_SECURE=true`.
+- **Local deployment:** if the host runs LXD, the installer enables
+  "Deploy on this machine" automatically (compose override
+  `infrastructure/docker-compose.local.yml`, env `CVX_ENABLE_LOCAL_DEPLOYMENT=true`).
 
 ## Adding a compute node
 

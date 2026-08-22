@@ -1,5 +1,6 @@
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,9 +17,10 @@ from app.core.security import (
     utcnow,
 )
 from app.core.logging import get_logger
-from app.models import EnrollmentToken, Node, NodeStatus
+from app.models import EnrollmentToken, Node, NodeStatus, NODE_KIND_LOCAL
 from app.providers.agent_client import AgentClient
 from app.providers.lxd import LXDProvider
+from app.providers.local_lxd import LocalLXDProvider
 from app.schemas.node import AgentHello, AgentHeartbeat, NodeCreate
 
 log = get_logger("cvx.node")
@@ -248,11 +250,77 @@ class NodeService:
 
         Raises if the node has no usable credential (never enrolled / rotated).
         """
+        if getattr(node, "kind", "agent") == NODE_KIND_LOCAL:
+            return LocalLXDProvider()
         if not node.credential_encrypted:
             raise NotFoundError("Node is not enrolled.")
         credential = decrypt_secret(node.credential_encrypted)
         client = AgentClient.for_node(node.public_ip, credential)
         return LXDProvider(client)
+
+    @staticmethod
+    async def get_or_create_local_node(db: AsyncSession) -> Node | None:
+        """Return the singleton "local machine" node, creating it when possible.
+
+        Returns None when local deployment is disabled or no LXD socket is
+        reachable — callers translate that into a user-facing error.
+        """
+        from app.providers.local_lxd import (
+            NODE_LOCAL_NAME,
+            local_deployment_available,
+            local_capacity,
+        )
+
+        existing = (
+            await db.execute(select(Node).where(Node.kind == NODE_KIND_LOCAL))
+        ).scalar_one_or_none()
+        if existing is not None and existing.status != NodeStatus.REMOVED:
+            return existing
+        if not local_deployment_available():
+            return None
+
+        try:
+            cap = await local_capacity()
+        except Exception as e:  # socket flapped between check and use
+            log.warning("local capacity detection failed: %s", e)
+            return None
+
+        if existing is not None:  # previously REMOVED — revive it
+            existing.status = NodeStatus.ONLINE
+            existing.cpu_cores = cap["cpu_cores"]
+            existing.ram_total_mb = cap["ram_total_mb"]
+            existing.storage_total_gb = cap["storage_total_gb"]
+            await db.flush()
+            return existing
+
+        node = Node(
+            name=NODE_LOCAL_NAME,
+            location="Local",
+            hostname=str(cap.get("hostname") or "localhost"),
+            public_ip="127.0.0.1",  # placeholder; never dialed for kind=local
+            description="This machine (control plane host with local LXD)",
+            kind=NODE_KIND_LOCAL,
+            status=NodeStatus.ONLINE,
+            cpu_cores=cap["cpu_cores"],
+            ram_total_mb=cap["ram_total_mb"],
+            storage_total_gb=cap["storage_total_gb"],
+        )
+        db.add(node)
+        await db.flush()
+        log.info("registered local deployment host node=%s", node.id)
+        return node
+
+    @staticmethod
+    async def refresh_local_node(db: AsyncSession, node: Node) -> dict[str, Any]:
+        """Re-detect live capacity facts for the local node."""
+        from app.providers.local_lxd import local_capacity
+
+        cap = await local_capacity()
+        node.cpu_cores = cap["cpu_cores"]
+        node.ram_total_mb = cap["ram_total_mb"]
+        node.storage_total_gb = cap["storage_total_gb"]
+        await db.flush()
+        return cap
 
     @staticmethod
     async def get_node(db: AsyncSession, node_id: uuid.UUID) -> Node:

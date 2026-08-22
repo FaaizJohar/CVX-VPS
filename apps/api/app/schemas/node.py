@@ -54,6 +54,7 @@ class NodeOut(ORMModel):
     public_ip: str
     description: str
     status: str
+    kind: str = "agent"  # "agent" | "local"
     agent_version: str | None
     lxd_version: str | None
     os_name: str | None

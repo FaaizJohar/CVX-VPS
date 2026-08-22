@@ -3,7 +3,7 @@ from app.models.image import Image
 from app.models.logs import AuditLog, LogEntry, LogSource, SecurityEvent, SecurityEventSeverity
 from app.models.metrics import NodeMetricSample, VPSMetricSample
 from app.models.network import IPAddress, IPStatus, Network, NetworkType
-from app.models.node import EnrollmentToken, Node, NodeStatus
+from app.models.node import (NODE_KIND_AGENT, NODE_KIND_LOCAL, EnrollmentToken, Node, NodeStatus)
 from app.models.setting import Setting
 from app.models.snapshot import Backup, BackupStatus, Snapshot
 from app.models.storage import StoragePool, Volume
@@ -23,6 +23,8 @@ __all__ = [
     "LogSource",
     "Network",
     "NetworkType",
+    "NODE_KIND_AGENT",
+    "NODE_KIND_LOCAL",
     "Node",
     "NodeMetricSample",
     "NodeStatus",

@@ -32,3 +32,21 @@ async def ensure_owner_account() -> None:
         db.add(owner)
         await db.commit()
         log.info("bootstrap owner account created email=%s", settings.bootstrap_owner_email)
+
+
+async def ensure_local_node() -> None:
+    """Register the control-plane host as the "local machine" node when local
+    deployment is enabled and an LXD socket is reachable."""
+    from app.core.config import get_settings as _s
+    from app.services.node_service import NodeService
+
+    if not _s().enable_local_deployment:
+        return
+    factory = get_session_factory()
+    try:
+        async with factory() as db:
+            node = await NodeService.get_or_create_local_node(db)
+            if node is not None:
+                await db.commit()
+    except Exception:
+        log.warning("local node registration skipped (LXD unreachable?)", exc_info=True)

@@ -55,6 +55,11 @@ class Settings(BaseSettings):
     public_base_url: str = "https://cvx.example.com"
     cvx_agent_install_url: str | None = None
 
+    # Local deployment (control plane hosts VPSes on its own LXD)
+    enable_local_deployment: bool = False
+    lxd_socket_path: str | None = None
+    local_console_shell: str = "/bin/bash"
+
     # Bootstrap
     bootstrap_owner_email: str | None = None
     bootstrap_owner_password: str | None = None

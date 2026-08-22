@@ -1,12 +1,13 @@
 import uuid
 
 from fastapi import APIRouter, Query, Request
+from sqlalchemy import select
 
 from app.api.deps.auth import AdminDep, DbDep
 from app.api.deps.auth import ActorDep
 from app.core.config import get_settings
-from app.core.errors import NotFoundError
-from app.models import Node, NodeStatus, UserRole
+from app.core.errors import NotFoundError, ValidationError
+from app.models import NODE_KIND_AGENT, NODE_KIND_LOCAL, Node, NodeStatus, UserRole
 from app.schemas.node import NodeCreate, NodeEnrollmentTokenOut, NodeOut
 from app.services.audit import record_audit
 from app.services.node_service import NodeService
@@ -122,6 +123,8 @@ async def rotate_credentials(node_id: uuid.UUID, actor: AdminDep, db: DbDep) -> 
     from app.core.security import utcnow
 
     node = await NodeService.get_node(db, node_id)
+    if getattr(node, "kind", NODE_KIND_AGENT) == NODE_KIND_LOCAL:
+        raise ValidationError("The local machine does not use agent enrollment.")
     node.credential_hash = None
     node.credential_encrypted = None
     node.status = NodeStatus.PENDING
@@ -161,6 +164,73 @@ async def disable_node(node_id: uuid.UUID, actor: AdminDep, db: DbDep) -> NodeOu
     return NodeOut.model_validate(node)
 
 
+@router.get("/local/status")
+async def local_status(actor: ActorDep, db: DbDep) -> dict:
+    """Local deployment availability + coarse host capacity (any user)."""
+    from app.core.errors import ValidationError
+    from app.models import NODE_KIND_LOCAL
+    from app.providers.local_lxd import local_deployment_available
+
+    is_admin = actor.user.role in (UserRole.OWNER, UserRole.ADMIN)
+    if not get_settings().enable_local_deployment:
+        return {"available": False, "reason": "disabled"}
+    if not local_deployment_available():
+        return {"available": False, "reason": "no_lxd_socket"}
+
+    from app.providers.local_lxd import local_status as _probe
+
+    try:
+        status = await _probe()
+    except Exception:
+        return {"available": False, "reason": "lxd_unreachable"}
+
+    node = (
+        await db.execute(select(Node).where(Node.kind == NODE_KIND_LOCAL))
+    ).scalar_one_or_none()
+    out: dict = {
+        "available": True,
+        "node_id": str(node.id) if node else None,
+        "cpu_cores": status["cpu_cores"],
+        "ram_total_mb": status["ram_total_mb"],
+        "storage_total_gb": status["storage_total_gb"],
+        "storage_used_gb": status["storage_used_gb"],
+    }
+    if is_admin:
+        out.update(
+            {
+                "socket_path": status.get("socket_path"),
+                "lxd_version": status.get("lxd_version"),
+                "os_name": status.get("os_name"),
+                "hostname": status.get("hostname"),
+            }
+        )
+    return out
+
+
+@router.post("/local/refresh")
+async def refresh_local(actor: AdminDep, db: DbDep) -> dict:
+    """Re-detect the local host's live capacity facts into its node row."""
+    from app.providers.local_lxd import local_deployment_available
+
+    node = (
+        await db.execute(select(Node).where(Node.kind == NODE_KIND_LOCAL))
+    ).scalar_one_or_none()
+    if not local_deployment_available():
+        raise ValidationError("Local deployment is unavailable on this installation.")
+    if node is None:
+        created = await NodeService.get_or_create_local_node(db)
+        if created is None:
+            raise ValidationError("Local deployment is unavailable on this installation.")
+        return {"refreshed": True}
+    cap = await NodeService.refresh_local_node(db, node)
+    await record_audit(
+        db, action="node.local_refresh", actor_user_id=str(actor.user.id),
+        resource_type="node", resource_id=str(node.id),
+        detail={"cpu_cores": cap["cpu_cores"], "ram_total_mb": cap["ram_total_mb"]},
+    )
+    return {"refreshed": True}
+
+
 @router.delete("/{node_id}")
 async def remove_node(node_id: uuid.UUID, actor: AdminDep, db: DbDep) -> dict:
     from sqlalchemy import func, select
@@ -169,6 +239,8 @@ async def remove_node(node_id: uuid.UUID, actor: AdminDep, db: DbDep) -> dict:
     from app.models import VPS, VPSStatus
 
     node = await NodeService.get_node(db, node_id)
+    if getattr(node, "kind", NODE_KIND_AGENT) == NODE_KIND_LOCAL:
+        raise ValidationError("The local machine cannot be removed.")
     active = (
         await db.execute(
             select(func.count(VPS.id)).where(

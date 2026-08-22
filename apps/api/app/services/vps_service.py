@@ -12,6 +12,7 @@ from app.models import (
     IPAddress,
     IPStatus,
     Image,
+    NODE_KIND_AGENT,
     Node,
     NodeStatus,
     User,
@@ -53,11 +54,22 @@ class VPSService:
     async def create_vps(
         db: AsyncSession, *, data: VPSCreate, owner: User, ip: str | None = None
     ) -> VPS:
-        node = await db.get(Node, data.node_id)
+        if data.deployment_mode == "local":
+            node = await NodeService.get_or_create_local_node(db)
+            if node is None:
+                raise ValidationError(
+                    "Local deployment is unavailable on this installation."
+                )
+        else:
+            assert data.node_id is not None
+            node = await db.get(Node, data.node_id)
         if node is None or node.status not in (NodeStatus.ONLINE, NodeStatus.MAINTENANCE):
             raise ValidationError("Target node is not online.")
         if node.status == NodeStatus.MAINTENANCE:
             raise ValidationError("Node is in maintenance mode.")
+        expected_kind = "local" if data.deployment_mode == "local" else NODE_KIND_AGENT
+        if getattr(node, "kind", NODE_KIND_AGENT) != expected_kind:
+            raise ValidationError("Deployment mode does not match the target node.")
 
         image = await db.get(Image, data.image_id)
         if image is None or not image.enabled:
@@ -103,6 +115,7 @@ class VPSService:
             hostname=data.hostname,
             provider_ref=ref,
             status=VPSStatus.PROVISIONING,
+            deployment_mode=data.deployment_mode,
             cpu_limit=data.cpu_limit,
             ram_mb=data.ram_mb,
             swap_mb=data.swap_mb,

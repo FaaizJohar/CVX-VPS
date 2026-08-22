@@ -1,0 +1,19 @@
+# CVX Panel — local deployment mode override.
+#
+# Mounts the host's LXD unix socket into the API container and enables
+# "Deploy on this machine" (deployment_mode=local). Use together with the
+# prod compose file:
+#
+#   docker compose -f infrastructure/docker-compose.prod.yml \
+#     -f infrastructure/docker-compose.local.yml up -d --build
+#
+# Set CVX_LXD_SOCKET_HOST in .env when the host socket is not the snap
+# default (e.g. /var/lib/lxd/unix.socket or Incus's socket).
+services:
+  api:
+    environment:
+      CVX_ENABLE_LOCAL_DEPLOYMENT: "true"
+    volumes:
+      - type: bind
+        source: ${CVX_LXD_SOCKET_HOST:-/var/snap/lxd/common/lxd/unix.socket}
+        target: /var/lib/lxd/unix.socket

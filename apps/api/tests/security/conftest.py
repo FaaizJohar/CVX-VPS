@@ -44,7 +44,12 @@ class FakeProvider:
     async def create_backup(self, *a, **k): return {}
     async def delete_backup(self, *a, **k): return None
     async def restore_backup(self, *a, **k): return {}
-    def console_ws_url(self, name: str): return f"wss://agent/v1/instances/{name}/console"
+    async def console_target(self, name: str, cols: int, rows: int):
+        from app.providers.base import ConsoleTarget
+
+        return ConsoleTarget(
+            kind="agent", url=f"wss://agent/v1/instances/{name}/console"
+        )
 
 
 @pytest.fixture

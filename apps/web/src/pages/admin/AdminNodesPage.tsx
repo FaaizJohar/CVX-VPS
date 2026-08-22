@@ -2,12 +2,13 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api, ApiError } from "@/lib/api";
-import type { NodeInfo } from "@/types";
+import type { LocalStatus, NodeInfo } from "@/types";
 import { Button } from "@/components/ui/Button";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/Loading";
 import { Input } from "@/components/ui/Input";
 import { Field } from "@/components/ui/Input";
+import { ModeBadge } from "@/components/ui/ModeBadge";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { fmtRelative } from "@/lib/format";
 
@@ -27,6 +28,16 @@ export default function AdminNodesPage() {
     queryKey: ["nodes"],
     queryFn: () => api.get<NodeInfo[]>("/api/v1/nodes"),
     refetchInterval: 15_000,
+  });
+  const { data: localStatus } = useQuery({
+    queryKey: ["nodes", "local", "status"],
+    queryFn: () => api.get<LocalStatus>("/api/v1/nodes/local/status"),
+    refetchInterval: 30_000,
+  });
+
+  const refreshLocal = useMutation({
+    mutationFn: () => api.post("/api/v1/nodes/local/refresh"),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["nodes"] }),
   });
 
   const create = useMutation({
@@ -116,6 +127,63 @@ export default function AdminNodesPage() {
         </Card>
       )}
 
+      {/* Local machine (control plane host) */}
+      {localStatus && (
+        <Card className={localStatus.available ? "border-violet-500/30" : ""}>
+          <CardHeader
+            title="Local machine"
+            action={
+              localStatus.available ? (
+                <Button size="sm" onClick={() => refreshLocal.mutate()} disabled={refreshLocal.isPending}>
+                  {refreshLocal.isPending ? "Refreshing…" : "Re-detect"}
+                </Button>
+              ) : undefined
+            }
+          />
+          <div className="p-4 text-sm">
+            {localStatus.available ? (
+              <div className="grid gap-3 sm:grid-cols-4">
+                <div>
+                  <p className="stat-label">Status</p>
+                  <p className="mt-1"><ModeBadge mode="local" /> <span className="ml-1 text-emerald-400">Available</span></p>
+                </div>
+                <div>
+                  <p className="stat-label">CPU</p>
+                  <p className="mono-data mt-1">{localStatus.cpu_cores} cores</p>
+                </div>
+                <div>
+                  <p className="stat-label">Memory</p>
+                  <p className="mono-data mt-1">
+                    {localStatus.ram_total_mb != null
+                      ? `${(localStatus.ram_total_mb / 1024).toFixed(0)} GB`
+                      : "?"}
+                  </p>
+                </div>
+                <div>
+                  <p className="stat-label">Storage</p>
+                  <p className="mono-data mt-1">
+                    {localStatus.storage_used_gb ?? 0} / {localStatus.storage_total_gb ?? "?"} GB used
+                  </p>
+                </div>
+                {localStatus.lxd_version && (
+                  <p className="text-xs text-cvx-faint sm:col-span-4">
+                    LXD {localStatus.lxd_version} · socket{" "}
+                    <code className="font-mono">{localStatus.socket_path}</code>
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p className="text-xs text-cvx-faint">
+                Local deployment unavailable
+                {localStatus.reason === "disabled" && " — set CVX_ENABLE_LOCAL_DEPLOYMENT=true."}
+                {localStatus.reason === "no_lxd_socket" && " — LXD is not installed or the socket is not mounted."}
+                {localStatus.reason === "lxd_unreachable" && " — LXD did not answer on its unix socket."}
+              </p>
+            )}
+          </div>
+        </Card>
+      )}
+
       {isLoading ? (
         <p className="py-8 text-center text-sm text-cvx-faint">Loading…</p>
       ) : !nodes || nodes.length === 0 ? (
@@ -137,9 +205,12 @@ export default function AdminNodesPage() {
               {nodes.map((n) => (
                 <tr key={n.id} className="hover:bg-cvx-raised/40">
                   <td className="px-4 py-2.5">
-                    <Link to={`/app/admin/nodes/${n.id}`} className="font-mono text-cvx-accent hover:underline">
-                      {n.name}
-                    </Link>
+                    <div className="flex items-center gap-2">
+                      <Link to={`/app/admin/nodes/${n.id}`} className="font-mono text-cvx-accent hover:underline">
+                        {n.name}
+                      </Link>
+                      {n.kind === "local" && <ModeBadge mode="local" />}
+                    </div>
                   </td>
                   <td className="px-4 py-2.5 text-cvx-muted">{n.location}</td>
                   <td className="mono-data px-4 py-2.5">{n.public_ip}</td>

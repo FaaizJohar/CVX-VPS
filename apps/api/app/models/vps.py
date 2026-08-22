@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
@@ -76,6 +77,11 @@ class VPS(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     # Raw provider config (advanced configuration tab mirrors this)
     raw_config: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
 
+    # "node" (deployed on an enrolled agent node) or "local" (control-plane host).
+    deployment_mode: Mapped[str] = mapped_column(
+        String(16), default="node", server_default="node", nullable=False
+    )
+
     provision_error: Mapped[str | None] = mapped_column(Text)
 
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -85,6 +91,10 @@ class VPS(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __table_args__ = (
         Index("ix_vps_owner_status", "owner_id", "status"),
         Index("ix_vps_node_status", "node_id", "status"),
+        CheckConstraint(
+            "deployment_mode IN ('node', 'local')",
+            name="ck_vps_deployment_mode",
+        ),
     )
 
 

@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth, useIsAdmin } from "@/lib/auth";
 import { Spinner } from "@/components/ui/Loading";
+import { CommandPalette } from "@/components/ui/CommandPalette";
 
 const mainNav = [
   { to: "/app", label: "Overview", end: true },
@@ -40,6 +41,18 @@ export function DashboardLayout() {
   const isAdmin = useIsAdmin();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   if (loading) {
     return (
@@ -58,9 +71,19 @@ export function DashboardLayout() {
       <NavLink to="/app" className="flex items-center gap-2 px-2 pt-1">
         <span className="font-mono text-lg font-semibold tracking-tight text-cvx-text">CVX</span>
         <span className="rounded border border-cvx-border px-1 py-0.5 text-[9px] uppercase tracking-widest text-cvx-faint">
-          v1
+          v1.1
         </span>
       </NavLink>
+
+      <button
+        type="button"
+        onClick={() => setPaletteOpen(true)}
+        aria-label="Open command palette"
+        className="flex items-center justify-between rounded-md border border-cvx-border bg-cvx-raised/60 px-3 py-2 text-xs text-cvx-faint transition-colors hover:border-cvx-border-strong hover:text-cvx-muted"
+      >
+        <span>Search…</span>
+        <kbd className="rounded border border-cvx-border px-1 font-mono text-[10px]">⌘K</kbd>
+      </button>
 
       <div className="space-y-1">
         <p className="px-3 pb-1 text-[10px] font-medium uppercase tracking-[0.16em] text-cvx-faint">
@@ -99,6 +122,8 @@ export function DashboardLayout() {
 
   return (
     <div className="flex h-full">
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+
       {/* Desktop sidebar */}
       <aside className="hidden w-60 shrink-0 border-r border-cvx-border bg-cvx-panel lg:block">
         {sidebar}
@@ -123,7 +148,17 @@ export function DashboardLayout() {
             </svg>
           </button>
           <span className="font-mono font-semibold">CVX</span>
-          <div className="w-7" />
+          <button
+            type="button"
+            onClick={() => setPaletteOpen(true)}
+            aria-label="Search"
+            className="rounded-md p-1.5 hover:bg-cvx-raised"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <circle cx="7" cy="7" r="4.5" />
+              <path d="M10.5 10.5L14 14" />
+            </svg>
+          </button>
         </header>
 
         <main className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6 scrollbar-thin">

@@ -5,6 +5,7 @@ import { api, ApiError } from "@/lib/api";
 import type { VPS } from "@/types";
 import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Input";
+import { ModeBadge } from "@/components/ui/ModeBadge";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { EmptyState, PageLoader } from "@/components/ui/Loading";
 import { fmtDate } from "@/lib/format";
@@ -86,9 +87,12 @@ export default function VPSListPage() {
               {data.items.map((v) => (
                 <tr key={v.id} className="hover:bg-cvx-raised/40">
                   <td className="px-4 py-3">
-                    <Link to={`/app/vps/${v.id}`} className="font-mono hover:text-cvx-accent-hover">
-                      {v.name}
-                    </Link>
+                    <div className="flex items-center gap-2">
+                      <Link to={`/app/vps/${v.id}`} className="font-mono hover:text-cvx-accent-hover">
+                        {v.name}
+                      </Link>
+                      <ModeBadge mode={v.deployment_mode} />
+                    </div>
                     <p className="text-xs text-cvx-faint">{v.hostname}</p>
                   </td>
                   <td className="mono-data hidden px-4 py-3 text-cvx-muted md:table-cell">

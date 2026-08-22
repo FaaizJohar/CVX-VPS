@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import type { VPS } from "@/types";
 import { PageLoader, Spinner } from "@/components/ui/Loading";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { ModeBadge } from "@/components/ui/ModeBadge";
 
 const CommandTab = lazy(() => import("./tabs/CommandTab"));
 const TerminalTab = lazy(() => import("./tabs/TerminalTab"));
@@ -62,7 +63,7 @@ export default function VPSWorkspace() {
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h1 className="truncate font-mono text-lg font-semibold">{vps?.name ?? "…"}</h1>
-              {vps && <StatusBadge status={vps.status} />}
+              {vps && <><StatusBadge status={vps.status} /><ModeBadge mode={vps.deployment_mode} /></>}
             </div>
             <p className="truncate font-mono text-xs text-cvx-faint">
               {vps?.ipv4 ?? vps?.hostname ?? ""}
