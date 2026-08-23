@@ -25,6 +25,10 @@
 #   CVX_OWNER_EMAIL       Bootstrap owner email    (default: admin@example.com —
 #                         must be a valid domain: .local/.test etc. are rejected)
 #   CVX_OWNER_PASSWORD    Bootstrap owner password (default: random, saved to .env)
+#   CVX_INSTALL_LXD       1 = install LXD on this host and enable local
+#                         deployment ("Deploy on This Machine"); 0 = skip.
+#                         Unset + interactive terminal = asks. Requires a
+#                         KVM/bare-metal host (LXC/OpenVZ containers can't run LXD).
 #   REPO_URL              Source repo              (default: this project)
 #   CVX_INSTALL_DIR       Install location         (default: /opt/cvx-panel)
 #
@@ -111,17 +115,43 @@ set -a; . ./.env; set +a
 # ------------------------------------------------------- local deployment --
 # When the host itself runs LXD, mount its socket and enable "Deploy on this
 # machine" so users can provision VPSes without enrolling any remote node.
+# Set CVX_INSTALL_LXD=1 (or run interactively) to install LXD when missing.
 COMPOSE="-f infrastructure/docker-compose.prod.yml"
 LXD_SOCK=""
 for cand in /var/snap/lxd/common/lxd/unix.socket /var/lib/lxd/unix.socket; do
   [ -S "$cand" ] && { LXD_SOCK="$cand"; break; }
 done
+
+if [ -z "$LXD_SOCK" ]; then
+  WANT_LXD="${CVX_INSTALL_LXD:-}"
+  if [ -z "$WANT_LXD" ] && [ -t 0 ]; then
+    printf "\n[cvx] Install LXD on this host to enable \"Deploy on This Machine\"? [Y/n] "
+    read -r ans
+    case "$ans" in n|N|no|NO) WANT_LXD=0;; *) WANT_LXD=1;; esac
+  fi
+  if [ "$WANT_LXD" != "0" ]; then
+    log "Installing LXD (snap)..."
+    command -v snap >/dev/null 2>&1 || { apt-get update -qq && apt-get install -y snapd; }
+    systemctl enable --now snapd.socket 2>/dev/null || service snapd start 2>/dev/null || true
+    for i in $(seq 1 24); do snap wait system seed.loaded 2>/dev/null && break; sleep 5; done
+    snap install lxd
+    lxd init --auto
+    # Wait for the daemon socket to appear.
+    for i in $(seq 1 24); do [ -S /var/snap/lxd/common/lxd/unix.socket ] && break; sleep 5; done
+    [ -S /var/snap/lxd/common/lxd/unix.socket ] && LXD_SOCK=/var/snap/lxd/common/lxd/unix.socket \
+      || log "WARNING: LXD installed but its socket did not appear — continuing without local deployment."
+  else
+    log "Skipping LXD install (disabled)."
+  fi
+fi
+
 if [ -n "$LXD_SOCK" ]; then
-  log "Host LXD detected at $LXD_SOCK — enabling local deployment mode."
-  grep -q '^CVX_LXD_SOCKET_HOST=' .env || echo "CVX_LXD_SOCKET_HOST=$LXD_SOCK" >> .env
+  log "Host LXD ready at $LXD_SOCK — enabling local deployment mode."
+  sed -i '/^CVX_LXD_SOCKET_HOST=/d' .env
+  echo "CVX_LXD_SOCKET_HOST=$LXD_SOCK" >> .env
   COMPOSE="$COMPOSE -f infrastructure/docker-compose.local.yml"
 else
-  log "No host LXD found — local deployment stays disabled (nodes only)."
+  log "No host LXD — local deployment stays disabled (nodes only)."
 fi
 
 # ------------------------------------------------------------------- stack --
