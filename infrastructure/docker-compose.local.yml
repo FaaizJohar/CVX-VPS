@@ -13,6 +13,11 @@ services:
   api:
     environment:
       CVX_ENABLE_LOCAL_DEPLOYMENT: "true"
+    # Join the host's "lxd" group (resolved by dockerd from the HOST's
+    # /etc/group) so the container's unprivileged user may connect to the
+    # mounted unix socket.
+    group_add:
+      - lxd
     volumes:
       - type: bind
         source: ${CVX_LXD_SOCKET_HOST:-/var/snap/lxd/common/lxd/unix.socket}
