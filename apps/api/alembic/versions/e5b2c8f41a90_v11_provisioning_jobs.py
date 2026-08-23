@@ -34,11 +34,11 @@ def upgrade() -> None:
         sa.Column("user_id", sa.Uuid()),
         sa.Column(
             "created_at", sa.DateTime(timezone=True), nullable=False,
-            server_default=sa.text("now()"),
+            server_default=sa.text("CURRENT_TIMESTAMP"),
         ),
         sa.Column(
             "updated_at", sa.DateTime(timezone=True), nullable=False,
-            server_default=sa.text("now()"),
+            server_default=sa.text("CURRENT_TIMESTAMP"),
         ),
         STATUS_CHECK,
     )

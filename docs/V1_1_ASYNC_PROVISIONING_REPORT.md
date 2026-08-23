@@ -50,6 +50,10 @@ process-global engine.
 ## 2. Database changes
 
 Migration: `apps/api/alembic/versions/e5b2c8f41a90_v11_provisioning_jobs.py`
+(applied automatically by the API container entrypoint before uvicorn starts;
+validated in isolation for both upgrade and downgrade via
+`apps/api/alembic/validate_e5b2c8f41a90.py` — server defaults use the
+Postgres/SQLite-portable `CURRENT_TIMESTAMP`).
 
 - New table **`provisioning_jobs`**: `kind`, `status` (`queued|running|succeeded|failed`),
   `stage`, `progress`, `error`, `vps_id` (FK), `node_id` (FK), `user_id` (FK),
