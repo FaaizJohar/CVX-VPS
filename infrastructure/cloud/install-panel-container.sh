@@ -72,10 +72,13 @@ CVX_BOOTSTRAP_OWNER_PASSWORD=$(openssl rand -hex 12)
 CVX_BEHIND_PROXY=true
 CVX_SESSION_COOKIE_SECURE=false
 CVX_HTTP_PORT=${HTTP_PORT}
+CVX_PUBLIC_BASE_URL=http://localhost:${HTTP_PORT}
 EOF
   chmod 600 .env
 else
   log ".env already exists, keeping it"
+  grep -q '^CVX_PUBLIC_BASE_URL=' .env \
+    || echo "CVX_PUBLIC_BASE_URL=http://localhost:${HTTP_PORT}" >> .env
 fi
 
 log "Building and starting containers (this takes several minutes)"
@@ -103,6 +106,12 @@ for _ in $(seq 1 20); do
   [ -n "$URL" ] && break
   sleep 2
 done
+
+if [ -n "$URL" ]; then
+  log "Pointing CVX_PUBLIC_BASE_URL at the quick tunnel"
+  sed -i "s|^CVX_PUBLIC_BASE_URL=.*|CVX_PUBLIC_BASE_URL=${URL}|" .env
+  docker compose --env-file .env -f infrastructure/docker-compose.prod.yml up -d
+fi
 
 OWNER_EMAIL=$(grep CVX_BOOTSTRAP_OWNER_EMAIL .env | cut -d= -f2)
 OWNER_PASS=$(grep CVX_BOOTSTRAP_OWNER_PASSWORD .env | cut -d= -f2)
