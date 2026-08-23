@@ -23,7 +23,7 @@ async def test_disk_overallocation_rejected(
     # First VPS: 30 GB — fits.
     resp = await create_vps(client, node["id"], str(ubuntu_image.id),
                             name="disk-a", disk_gb=30)
-    assert resp.status_code == 201, resp.text
+    assert resp.status_code == 200, resp.text
 
     # Second: 30 GB more would total 60 > 50 — rejected.
     resp = await create_vps(client, node["id"], str(ubuntu_image.id),
@@ -34,7 +34,7 @@ async def test_disk_overallocation_rejected(
     # Exactly at the limit passes.
     resp = await create_vps(client, node["id"], str(ubuntu_image.id),
                             name="disk-c", disk_gb=20)
-    assert resp.status_code == 201, resp.text
+    assert resp.status_code == 200, resp.text
 
 
 async def test_deleted_vps_frees_disk_capacity(
@@ -50,7 +50,7 @@ async def test_deleted_vps_frees_disk_capacity(
 
     resp = await create_vps(client, node["id"], str(ubuntu_image.id), disk_gb=25)
     vps_id = resp.json()["id"]
-    assert resp.status_code == 201
+    assert resp.status_code == 200
 
     # No room now.
     resp = await create_vps(client, node["id"], str(ubuntu_image.id),
@@ -61,7 +61,7 @@ async def test_deleted_vps_frees_disk_capacity(
     assert (await client.delete(f"/api/v1/vps/{vps_id}")).status_code == 200
     resp = await create_vps(client, node["id"], str(ubuntu_image.id),
                             name="disk-e", disk_gb=10)
-    assert resp.status_code == 201, resp.text
+    assert resp.status_code == 200, resp.text
 
 
 async def test_unlimited_when_storage_unknown(
@@ -75,5 +75,5 @@ async def test_unlimited_when_storage_unknown(
     row.storage_total_gb = None
     await db_session.commit()
     resp = await create_vps(client, node["id"], str(ubuntu_image.id), disk_gb=4096)
-    assert resp.status_code == 201, resp.text
+    assert resp.status_code == 200, resp.text
 

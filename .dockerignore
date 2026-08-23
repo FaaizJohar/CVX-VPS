@@ -1,0 +1,20 @@
+# Keep the API image build context small (context = repo root).
+.git
+.gitignore
+node_modules
+**/node_modules
+dist
+**/dist
+build
+**/build
+__pycache__
+**/__pycache__
+*.pyc
+.venv
+venv
+.pytest_cache
+**/.pytest_cache
+.coverage
+docs
+apps/web/node_modules
+apps/web/dist

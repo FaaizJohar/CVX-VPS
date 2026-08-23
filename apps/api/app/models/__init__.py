@@ -1,5 +1,6 @@
 from app.models.apikey import ApiKey
 from app.models.image import Image
+from app.models.job import JobStatus, ProvisioningJob
 from app.models.logs import AuditLog, LogEntry, LogSource, SecurityEvent, SecurityEventSeverity
 from app.models.metrics import NodeMetricSample, VPSMetricSample
 from app.models.network import IPAddress, IPStatus, Network, NetworkType
@@ -19,6 +20,7 @@ __all__ = [
     "Image",
     "IPAddress",
     "IPStatus",
+    "JobStatus",
     "LogEntry",
     "LogSource",
     "Network",
@@ -29,6 +31,7 @@ __all__ = [
     "NodeMetricSample",
     "NodeStatus",
     "PasswordResetToken",
+    "ProvisioningJob",
     "SecurityEvent",
     "SecurityEventSeverity",
     "Setting",

@@ -1,4 +1,5 @@
 import uuid
+from datetime import timedelta
 
 from fastapi import APIRouter, Query, Request
 from sqlalchemy import select
@@ -54,6 +55,8 @@ async def list_nodes(actor: ActorDep, db: DbDep) -> list[dict]:
 async def create_node(body: NodeCreate, actor: AdminDep, db: DbDep, request: Request) -> dict:
     from datetime import timedelta
 
+    from app.core.security import utcnow
+
     node, token = await NodeService.create_node(
         db, data=body, created_by_id=actor.user.id
     )
@@ -63,22 +66,15 @@ async def create_node(body: NodeCreate, actor: AdminDep, db: DbDep, request: Req
         detail={"name": node.name}, ip_address=request.client.host if request.client else None,
     )
     settings = get_settings()
-    install_command = (
-        f"curl -fsSL {settings.cvx_agent_install_url} | sudo CVX_ENROLL_TOKEN={token} "
-        f"CVX_CONTROL_PLANE={settings.public_base_url} bash"
-        if settings.cvx_agent_install_url
-        else f"cvx-agent enroll --token {token}"
-    )
     return {
         "node": NodeOut.model_validate(node).model_dump(),
         "enrollment": {
             "node_id": str(node.id),
             "token": token,
             "expires_at": (
-                node.created_at
-                + timedelta(seconds=settings.enrollment_token_ttl_seconds)
+                utcnow() + timedelta(seconds=settings.enrollment_token_ttl_seconds)
             ).isoformat(),
-            "install_command": install_command,
+            "install_command": NodeService.build_install_command(token),
         },
     }
 
@@ -96,24 +92,24 @@ async def new_enrollment_token(
     node_id: uuid.UUID, actor: AdminDep, db: DbDep
 ) -> NodeEnrollmentTokenOut:
     """Issue a fresh single-use enrollment token (e.g. re-enrollment after rotation)."""
-    from datetime import timedelta
-
     from app.core.rate_limit import enforce_rate_limit
 
     await enforce_rate_limit(f"enroll-token:{actor.user.id}", limit=10, window_seconds=3600)
     node = await NodeService.get_node(db, node_id)
+    if getattr(node, "kind", NODE_KIND_AGENT) == NODE_KIND_LOCAL:
+        raise ValidationError("The local machine does not use agent enrollment.")
     await NodeService.revoke_enrollment_tokens(db, node_id=node.id)
     token = await NodeService.issue_enrollment_token(db, node=node, created_by_id=actor.user.id)
-    expires = (
-        node.last_heartbeat_at or node.created_at
-    ) + timedelta(seconds=get_settings().enrollment_token_ttl_seconds)
+    from app.core.security import utcnow
+
+    expires = utcnow() + timedelta(seconds=get_settings().enrollment_token_ttl_seconds)
     await record_audit(
         db, action="node.enrollment_token.issue", actor_user_id=str(actor.user.id),
         resource_type="node", resource_id=str(node.id),
     )
     return NodeEnrollmentTokenOut(
         node_id=node.id, token=token, expires_at=expires,
-        install_command=f"cvx-agent enroll --token {token}",
+        install_command=NodeService.build_install_command(token),
     )
 
 
@@ -166,42 +162,32 @@ async def disable_node(node_id: uuid.UUID, actor: AdminDep, db: DbDep) -> NodeOu
 
 @router.get("/local/status")
 async def local_status(actor: ActorDep, db: DbDep) -> dict:
-    """Local deployment availability + coarse host capacity (any user)."""
-    from app.core.errors import ValidationError
-    from app.models import NODE_KIND_LOCAL
-    from app.providers.local_lxd import local_deployment_available
+    """Local compute capability + capacity facts (cached probe, any user)."""
+    from app.services.local_capability import get_local_capability
 
     is_admin = actor.user.role in (UserRole.OWNER, UserRole.ADMIN)
-    if not get_settings().enable_local_deployment:
-        return {"available": False, "reason": "disabled"}
-    if not local_deployment_available():
-        return {"available": False, "reason": "no_lxd_socket"}
+    cap = await get_local_capability()
 
-    from app.providers.local_lxd import local_status as _probe
-
-    try:
-        status = await _probe()
-    except Exception:
-        return {"available": False, "reason": "lxd_unreachable"}
-
+    out: dict = {
+        "available": bool(cap.get("available")),
+        "state": cap.get("state"),
+        "reason": cap.get("reason"),
+        "message": cap.get("message"),
+        "diagnostics": cap.get("diagnostics", []),
+        "resources": cap.get("resources"),
+    }
     node = (
         await db.execute(select(Node).where(Node.kind == NODE_KIND_LOCAL))
     ).scalar_one_or_none()
-    out: dict = {
-        "available": True,
-        "node_id": str(node.id) if node else None,
-        "cpu_cores": status["cpu_cores"],
-        "ram_total_mb": status["ram_total_mb"],
-        "storage_total_gb": status["storage_total_gb"],
-        "storage_used_gb": status["storage_used_gb"],
-    }
+    out["node_id"] = str(node.id) if node else None
     if is_admin:
         out.update(
             {
-                "socket_path": status.get("socket_path"),
-                "lxd_version": status.get("lxd_version"),
-                "os_name": status.get("os_name"),
-                "hostname": status.get("hostname"),
+                "socket_path": cap.get("socket_path"),
+                "lxd_version": cap.get("lxd_version"),
+                "os_name": cap.get("os_name"),
+                "hostname": cap.get("hostname"),
+                "reasons": cap.get("reasons", []),
             }
         )
     return out
@@ -209,26 +195,36 @@ async def local_status(actor: ActorDep, db: DbDep) -> dict:
 
 @router.post("/local/refresh")
 async def refresh_local(actor: AdminDep, db: DbDep) -> dict:
-    """Re-detect the local host's live capacity facts into its node row."""
+    """Force a fresh local-capability probe and re-detect capacity facts."""
     from app.providers.local_lxd import local_deployment_available
+    from app.services.local_capability import get_local_capability, invalidate_cache
 
+    invalidate_cache()
     node = (
         await db.execute(select(Node).where(Node.kind == NODE_KIND_LOCAL))
     ).scalar_one_or_none()
     if not local_deployment_available():
         raise ValidationError("Local deployment is unavailable on this installation.")
+    cap = await get_local_capability(force=True)
     if node is None:
         created = await NodeService.get_or_create_local_node(db)
         if created is None:
-            raise ValidationError("Local deployment is unavailable on this installation.")
-        return {"refreshed": True}
-    cap = await NodeService.refresh_local_node(db, node)
+            raise ValidationError(
+                "Local compute is not ready: "
+                + str(cap.get("message") or "host is not capable.")
+            )
+        return {"refreshed": True, "state": cap.get("state")}
+    if cap.get("resources"):
+        r = cap["resources"]
+        node.cpu_cores = r.get("cpu_cores")
+        node.ram_total_mb = r.get("ram_total_mb")
+        node.storage_total_gb = r.get("storage_total_gb")
     await record_audit(
         db, action="node.local_refresh", actor_user_id=str(actor.user.id),
         resource_type="node", resource_id=str(node.id),
-        detail={"cpu_cores": cap["cpu_cores"], "ram_total_mb": cap["ram_total_mb"]},
+        detail={"state": cap.get("state")},
     )
-    return {"refreshed": True}
+    return {"refreshed": True, "state": cap.get("state")}
 
 
 @router.delete("/{node_id}")

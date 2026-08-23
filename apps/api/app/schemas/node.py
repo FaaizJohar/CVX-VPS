@@ -34,15 +34,29 @@ def validate_public_ip(value: str) -> str:
 
 
 class NodeCreate(BaseModel):
-    name: str = Field(min_length=2, max_length=64, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
+    """Admin-side node registration.
+
+    Everything identity-related (hostname, public IP, hardware facts) is
+    detected by the agent at enrollment time — none of it is required here.
+    """
+
+    name: str | None = Field(
+        default=None,
+        min_length=2,
+        max_length=64,
+        pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$",
+        description="Optional friendly name; generated when omitted.",
+    )
     location: str = Field(min_length=2, max_length=120)
-    hostname: str = Field(min_length=1, max_length=255)
-    public_ip: str = Field(min_length=3, max_length=64)
+    hostname: str | None = Field(default=None, max_length=255)
+    public_ip: str | None = Field(default=None, max_length=64)
     description: str = Field(default="", max_length=2000)
 
     @field_validator("public_ip")
     @classmethod
-    def validate_ip(cls, v: str) -> str:
+    def validate_ip(cls, v: str | None) -> str | None:
+        if v is None or v == "":
+            return None
         return validate_public_ip(v)
 
 
@@ -97,6 +111,20 @@ class AgentHello(BaseModel):
     ram_total_mb: int | None = Field(default=None, ge=64, le=33_554_432)  # ≤ 32 TiB
     storage_total_gb: float | None = Field(default=None, ge=1, le=33_554_432)
     storage_driver: str | None = Field(default=None, max_length=32)
+    public_ip: str | None = Field(default=None, max_length=64)
+
+    @field_validator("public_ip")
+    @classmethod
+    def validate_hello_ip(cls, v: str | None) -> str | None:
+        if v is None or v == "":
+            return None
+        import ipaddress as _ip
+
+        try:
+            _ip.ip_address(v)
+        except ValueError as e:
+            raise ValueError("public_ip must be a valid IP address") from e
+        return v
 
 
 class EnrollRequest(AgentHello):
@@ -106,6 +134,7 @@ class EnrollRequest(AgentHello):
 class AgentHeartbeat(BaseModel):
     agent_version: str = Field(min_length=1, max_length=64)
     lxd_version: str | None = Field(default=None, max_length=32)
+    public_ip: str | None = Field(default=None, max_length=64)
     cpu_percent: float | None = Field(default=None, ge=0, le=100)
     ram_used_mb: int | None = Field(default=None, ge=0, le=33_554_432)
     ram_total_mb: int | None = Field(default=None, ge=0, le=33_554_432)

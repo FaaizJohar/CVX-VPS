@@ -132,20 +132,32 @@ async def test_create_vps_rejects_node_id_for_local_mode(
     assert resp.status_code == 422
 
 
+async def _create_local(client: AsyncClient, payload: dict) -> dict:
+    """POST a local-mode create, drive provisioning inline, return final VPS."""
+    from uuid import UUID
+
+    from app.services.vps_service import VPSService
+
+    resp = await client.post("/api/v1/vps", json=payload)
+    assert resp.status_code == 202, resp.text
+    body = resp.json()
+    err = await VPSService.provision_vps(vps_id=UUID(body["vps_id"]))
+    assert err is None, err
+    fetched = await client.get(f"/api/v1/vps/{body['vps_id']}")
+    return fetched.json()
+
+
 async def test_create_vps_local_happy_path(
     client: AsyncClient, owner_user, ubuntu_image, monkeypatch, fake_local_provider
 ) -> None:
     _enable_local(monkeypatch)
     await login(client, "owner@example.com", "OwnerPass123!")
 
-    resp = await client.post(
-        "/api/v1/vps",
-        json={"deployment_mode": "local", "image_id": str(ubuntu_image.id),
-              "name": "loc-01", "hostname": "loc01.cvx.test",
-              "cpu_limit": 2, "ram_mb": 1024, "disk_gb": 10},
-    )
-    assert resp.status_code == 201, resp.text
-    body = resp.json()
+    body = await _create_local(client, {
+        "deployment_mode": "local", "image_id": str(ubuntu_image.id),
+        "name": "loc-01", "hostname": "loc01.cvx.test",
+        "cpu_limit": 2, "ram_mb": 1024, "disk_gb": 10,
+    })
     assert body["deployment_mode"] == "local"
     assert body["status"] == "running"
     assert body["ipv4"] == "10.0.9.7"
@@ -158,12 +170,10 @@ async def test_create_vps_local_happy_path(
     assert local[0]["cpu_cores"] == 8 and local[0]["ram_total_mb"] == 16384
 
     # A second create reuses the same singleton node row.
-    resp2 = await client.post(
-        "/api/v1/vps",
-        json={"deployment_mode": "local", "image_id": str(ubuntu_image.id),
-              "name": "loc-02", "hostname": "loc02.cvx.test"},
-    )
-    assert resp2.status_code == 201
+    await _create_local(client, {
+        "deployment_mode": "local", "image_id": str(ubuntu_image.id),
+        "name": "loc-02", "hostname": "loc02.cvx.test",
+    })
     nodes = (await client.get("/api/v1/nodes")).json()
     assert len([n for n in nodes if n["kind"] == "local"]) == 1
 

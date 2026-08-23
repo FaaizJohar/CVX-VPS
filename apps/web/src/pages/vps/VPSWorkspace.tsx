@@ -6,6 +6,7 @@ import type { VPS } from "@/types";
 import { PageLoader, Spinner } from "@/components/ui/Loading";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ModeBadge } from "@/components/ui/ModeBadge";
+import { JobProgress } from "@/components/vps/JobProgress";
 
 const CommandTab = lazy(() => import("./tabs/CommandTab"));
 const TerminalTab = lazy(() => import("./tabs/TerminalTab"));
@@ -42,7 +43,11 @@ export default function VPSWorkspace() {
     queryKey: ["vps", id],
     queryFn: () => api.get<VPS>(`/api/v1/vps/${id}`),
     enabled: unlocked,
-    refetchInterval: 15_000,
+    // Poll faster while the workspace shows a live provisioning job.
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === "creating" || status === "provisioning" ? 3_000 : 15_000;
+    },
   });
 
   useEffect(() => {
@@ -71,6 +76,21 @@ export default function VPSWorkspace() {
           </div>
         </div>
       </header>
+
+      {vps && ["creating", "provisioning"].includes(vps.status) && id && (
+        <div className="mt-3">
+          <JobProgress vpsId={id} />
+        </div>
+      )}
+      {vps?.status === "error" && vps.provision_error && (
+        <div
+          role="alert"
+          className="mt-3 rounded-md border border-cvx-danger/30 bg-cvx-danger/5 px-3 py-2.5 text-xs text-cvx-danger"
+        >
+          <p className="font-medium">Provisioning failed</p>
+          <p className="mt-1 font-mono text-[11px] text-cvx-muted">{vps.provision_error}</p>
+        </div>
+      )}
 
       {/* Tabs */}
       <nav className="-mx-4 mt-3 overflow-x-auto px-4 scrollbar-thin md:-mx-6 md:px-6">

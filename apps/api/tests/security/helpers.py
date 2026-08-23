@@ -45,6 +45,12 @@ async def enroll_node(client: AsyncClient, name: str = "SEC-01", **hello_overrid
 
 
 async def create_vps(client: AsyncClient, node_id: str, image_id: str, **overrides):
+    """POST /vps (202 + job) then drive provisioning inline; returns the
+    final GET response."""
+    import uuid as _uuid
+
+    from app.services.vps_service import VPSService
+
     payload = {
         "node_id": node_id,
         "image_id": image_id,
@@ -55,4 +61,10 @@ async def create_vps(client: AsyncClient, node_id: str, image_id: str, **overrid
         "disk_gb": 10,
     }
     payload.update(overrides)
-    return await client.post("/api/v1/vps", json=payload)
+    resp = await client.post("/api/v1/vps", json=payload)
+    if resp.status_code != 202:
+        return resp  # validation/rate-limit failures — caller asserts on this
+    body = resp.json()
+    err = await VPSService.provision_vps(vps_id=_uuid.UUID(body["vps_id"]))
+    assert err is None, f"provisioning failed in test: {err}"
+    return await client.get(f"/api/v1/vps/{body['vps_id']}")

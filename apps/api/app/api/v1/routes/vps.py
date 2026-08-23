@@ -40,11 +40,30 @@ async def list_vps(
     }
 
 
-@router.post("", status_code=201)
-async def create_vps(body: VPSCreate, actor: ActorDep, db: DbDep, request: Request) -> VPSOut:
+@router.post("", status_code=202)
+async def create_vps(body: VPSCreate, actor: ActorDep, db: DbDep, request: Request) -> dict:
+    """Queue provisioning. Returns immediately with a job id; progress is
+    exposed via GET /jobs/{id} and SSE /jobs/{id}/events."""
+    from app.models import ProvisioningJob
+    from app.services.provisioning import enqueue_vps_create
+
     await enforce_rate_limit(f"vps-create:{actor.user.id}", limit=10, window_seconds=3600)
-    vps = await VPSService.create_vps(db, data=body, owner=actor.user, ip=_client_ip(request))
-    return VPSOut.model_validate(vps)
+    vps, node = await VPSService.prepare_vps(db, data=body, owner=actor.user)
+    job = ProvisioningJob(
+        kind="vps_create",
+        vps_id=vps.id,
+        node_id=node.id,
+        user_id=actor.user.id,
+    )
+    db.add(job)
+    await db.flush()
+    enqueue_vps_create(str(job.id))
+    return {
+        "job_id": str(job.id),
+        "vps_id": str(vps.id),
+        "status": "queued",
+        "name": vps.name,
+    }
 
 
 @router.get("/{vps_id}", response_model=VPSOut)

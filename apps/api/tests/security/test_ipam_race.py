@@ -37,7 +37,7 @@ async def test_same_ip_cannot_be_assigned_twice_sequentially(
     resp = await create_vps(
         client, node["id"], str(ubuntu_image.id), name="first", ipv4="203.0.113.99"
     )
-    assert resp.status_code == 201, resp.text
+    assert resp.status_code == 200, resp.text
     first_id = resp.json()["id"]
 
     # Second claim on the same address must fail cleanly.
@@ -168,4 +168,4 @@ async def test_delete_releases_ip_for_reuse(
     resp = await create_vps(
         client, node["id"], str(ubuntu_image.id), name="tmp2", ipv4="203.0.113.101"
     )
-    assert resp.status_code == 201, resp.text
+    assert resp.status_code == 200, resp.text

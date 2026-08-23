@@ -34,17 +34,21 @@ class NodeService:
     async def create_node(
         db: AsyncSession, *, data: NodeCreate, created_by_id: uuid.UUID
     ) -> tuple[Node, str]:
+        import secrets as _secrets
+
+        name = data.name or f"node-{_secrets.token_hex(3)}"
         existing = (
-            await db.execute(select(Node).where(Node.name == data.name))
+            await db.execute(select(Node).where(Node.name == name))
         ).scalar_one_or_none()
         if existing is not None:
-            raise ConflictError(f"Node name {data.name!r} already exists.")
+            raise ConflictError(f"Node name {name!r} already exists.")
 
         node = Node(
-            name=data.name,
+            name=name,
             location=data.location,
-            hostname=data.hostname,
-            public_ip=data.public_ip,
+            # Identity facts are filled in by the agent at enrollment.
+            hostname=data.hostname or "pending-detection",
+            public_ip=data.public_ip or "pending-detection",
             description=data.description,
             status=NodeStatus.PENDING,
         )
@@ -53,6 +57,15 @@ class NodeService:
 
         token = await NodeService.issue_enrollment_token(db, node=node, created_by_id=created_by_id)
         return node, token
+
+    @staticmethod
+    def build_install_command(token: str) -> str:
+        """One-command bootstrap served by this control plane."""
+        base = get_settings().public_base_url.rstrip("/")
+        return (
+            f"curl -fsSL {base}/install/node | sudo bash -s -- "
+            f"--token {token} --control-plane {base}"
+        )
 
     @staticmethod
     async def issue_enrollment_token(
@@ -135,6 +148,22 @@ class NodeService:
         node.ram_total_mb = hello.ram_total_mb
         node.storage_total_gb = hello.storage_total_gb
         node.storage_driver = hello.storage_driver
+        if hello.public_ip and hello.public_ip != "pending-detection":
+            node.public_ip = hello.public_ip
+
+        # Auto-generated placeholder names adopt the detected hostname so the
+        # dashboard shows something meaningful without admin input.
+        if node.name.startswith("node-") and hello.hostname:
+            candidate = "".join(
+                c if c.isalnum() or c in "-_" else "-" for c in hello.hostname.lower()
+            ).strip("-")[:64] or node.name
+            clash = (
+                await db.execute(
+                    select(Node.id).where(Node.name == candidate, Node.id != node.id)
+                )
+            ).scalar_one_or_none()
+            if clash is None:
+                node.name = candidate
 
         rec.used_at = utcnow()
         await db.flush()
@@ -171,6 +200,19 @@ class NodeService:
             node.storage_total_gb = hb.storage_total_gb
         node.load1 = hb.load1
         node.uptime_seconds = hb.uptime_seconds
+        if hb.public_ip and hb.public_ip != node.public_ip:
+            from app.services.audit import record_security_event
+
+            await record_security_event(
+                db,
+                category="node_ip_changed",
+                message=(
+                    f"Node {node.name} public IP changed: {node.public_ip} → {hb.public_ip}"
+                ),
+                severity="warning",
+                node_id=str(node.id),
+            )
+            node.public_ip = hb.public_ip
 
         # Reconcile instance states reported by the agent.
         known = {

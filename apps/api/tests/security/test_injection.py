@@ -31,9 +31,9 @@ async def test_hostname_metacharacters_stay_data(
             client, node["id"], str(ubuntu_image.id),
             name="inj", hostname=f"h{p}.cvx.test" if "\n" not in p else "h.cvx.test",
         )
-        # 422 (schema) or 201 (stored verbatim) — never a 500 from injection.
-        assert resp.status_code in (201, 422), f"{p!r}: {resp.status_code} {resp.text}"
-        if resp.status_code == 201:
+        # 422 (schema) or 200 (stored verbatim) — never a 500 from injection.
+        assert resp.status_code in (200, 422), f"{p!r}: {resp.status_code} {resp.text}"
+        if resp.status_code == 200:
             spec = fake_provider.created[-1]
             # Value reached the provider as inert data.
             assert spec.hostname in (f"h{p}.cvx.test", "h.cvx.test")
@@ -65,7 +65,7 @@ async def test_reserved_config_prefixes_require_admin(
     # Plain user creates their own VPS.
     await login(client, "user@example.com", "UserPass1234!")
     resp = await create_vps(client, node["id"], str(ubuntu_image.id))
-    assert resp.status_code == 201, resp.text
+    assert resp.status_code == 200, resp.text
     vps_id = resp.json()["id"]
 
     for key in ("raw.lxc", "security.privileged", "volatile.base_image", "boot.autostart"):

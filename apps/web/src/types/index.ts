@@ -140,9 +140,28 @@ export interface MetricPoint {
   net_tx_bps: number | null;
 }
 
+export interface CapabilityDiagnostic {
+  check: string;
+  ok: boolean;
+  detail: string;
+  hint?: string;
+}
+
+export interface LocalCapabilityResources {
+  cpu_cores?: number;
+  ram_total_mb?: number;
+  storage_total_gb?: number;
+  storage_used_gb?: number;
+}
+
 export interface LocalStatus {
   available: boolean;
-  reason?: "disabled" | "no_lxd_socket" | "lxd_unreachable";
+  state?: "ready" | "degraded" | "unavailable" | "not_configured";
+  reason?: string | null;
+  reasons?: string[];
+  message?: string | null;
+  diagnostics?: CapabilityDiagnostic[];
+  resources?: LocalCapabilityResources | null;
   node_id?: string | null;
   cpu_cores?: number;
   ram_total_mb?: number;
@@ -152,4 +171,17 @@ export interface LocalStatus {
   lxd_version?: string;
   os_name?: string;
   hostname?: string;
+}
+
+export interface ProvisioningJob {
+  id: string;
+  kind: string;
+  status: "queued" | "running" | "succeeded" | "failed";
+  stage: string;
+  progress: number;
+  error: string | null;
+  vps_id: string | null;
+  node_id: string | null;
+  created_at: string;
+  updated_at: string;
 }

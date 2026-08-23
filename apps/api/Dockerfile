@@ -6,10 +6,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /srv/cvx
 
-COPY pyproject.toml ./
-COPY app ./app
-COPY alembic ./alembic
-COPY alembic.ini ./
+# Build context is the repo root (see docker-compose files) so the node-agent
+# package can be shipped for /downloads/cvx-agent-latest.tar.gz + /install/node.
+COPY apps/api/pyproject.toml ./
+COPY apps/api/app ./app
+COPY apps/api/alembic ./alembic
+COPY apps/api/alembic.ini ./
+COPY services/node-agent ./node-agent
 
 RUN pip install --no-cache-dir \
     "fastapi>=0.115.0" \

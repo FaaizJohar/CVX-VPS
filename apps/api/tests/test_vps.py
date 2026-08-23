@@ -1,74 +1,9 @@
 import pytest
 from httpx import AsyncClient
 
-from app.providers.base import InstanceSpec, InstanceState
 from tests.conftest import login
 
 pytestmark = pytest.mark.asyncio
-
-
-class FakeProvider:
-    """Deterministic in-memory provider used to test control-plane logic."""
-
-    def __init__(self) -> None:
-        self.instances: dict[str, InstanceState] = {}
-        self.created: list[InstanceSpec] = []
-
-    async def ping(self): return {}
-
-    async def create_instance(self, spec: InstanceSpec) -> InstanceState:
-        self.created.append(spec)
-        state = InstanceState(
-            name=spec.name, status="Running",
-            ips={"eth0": "10.10.0.5"}, raw={"mac": "00:16:3e:aa:bb:cc"},
-        )
-        self.instances[spec.name] = state
-        return state
-
-    async def get_instance(self, name: str):
-        return self.instances.get(name)
-
-    async def delete_instance(self, name: str) -> None:
-        self.instances.pop(name, None)
-
-    async def start(self, name: str): return {"ok": True}
-    async def stop(self, name: str, timeout: int = 30): return {"ok": True}
-    async def restart(self, name: str, timeout: int = 30): return {"ok": True}
-    async def shutdown(self, name: str, timeout: int = 120): return {"ok": True}
-    async def set_config(self, name: str, config): return {"ok": True}
-    async def instance_metrics(self, name: str): return {}
-    async def create_snapshot(self, *a, **k): return {}
-    async def delete_snapshot(self, *a, **k): return None
-    async def rename_snapshot(self, *a, **k): return None
-    async def restore_snapshot(self, *a, **k): return {}
-    async def list_snapshots(self, name: str): return []
-    async def create_backup(self, *a, **k): return {}
-    async def restore_backup(self, *a, **k): return {}
-    async def console_target(self, name: str, cols: int, rows: int):
-        from app.providers.base import ConsoleTarget
-
-        return ConsoleTarget(
-            kind="agent", url=f"wss://agent/v1/instances/{name}/console"
-        )
-
-
-@pytest.fixture
-def fake_provider(monkeypatch):
-    provider = FakeProvider()
-
-    import app.services.node_service as ns
-    from app.models import Node
-
-    monkeypatch.setattr(
-        ns.NodeService, "provider_for", classmethod(lambda cls, node: provider)
-    )
-    # Also patch the reference imported inside vps_service.
-    import app.services.vps_service as vs
-
-    monkeypatch.setattr(
-        vs.NodeService, "provider_for", classmethod(lambda cls, node: provider)
-    )
-    return provider
 
 
 async def _enroll_node(client: AsyncClient) -> dict:
@@ -102,7 +37,19 @@ async def _create_vps(client: AsyncClient, node_id: str, image_id: str, **overri
         "disk_gb": 20,
     }
     payload.update(overrides)
-    return (await client.post("/api/v1/vps", json=payload)).json()
+    resp = await client.post("/api/v1/vps", json=payload)
+    assert resp.status_code == 202, resp.text
+    body = resp.json()
+    assert body["status"] == "queued"
+    # Tests drive the worker inline (deterministic, no background loop).
+    from uuid import UUID
+
+    from app.services.vps_service import VPSService
+
+    err = await VPSService.provision_vps(vps_id=UUID(body["vps_id"]))
+    assert err is None, err
+    fetched = await client.get(f"/api/v1/vps/{body['vps_id']}")
+    return fetched.json()
 
 
 async def test_vps_full_lifecycle(
@@ -145,8 +92,12 @@ async def test_vps_creation_requires_online_node(
               "public_ip": "192.0.2.9"},
     )
     pending_node = resp.json()["node"]
-    body = await _create_vps(client, pending_node["id"], str(ubuntu_image.id))
-    assert "error" in body  # node not online -> validation error
+    resp = await client.post("/api/v1/vps", json={
+        "node_id": pending_node["id"], "image_id": str(ubuntu_image.id),
+        "name": "web-01", "hostname": "web01.cvx.test",
+    })
+    assert resp.status_code == 422
+    assert "error" in resp.json()  # node not online -> validation error
 
 
 async def test_vps_owner_isolation(
@@ -208,7 +159,7 @@ async def test_vps_list_pagination_and_search(
             "node_id": node["id"], "image_id": str(ubuntu_image.id),
             "name": f"srv-{i}", "hostname": f"srv{i}.cvx.test",
         })
-        assert resp.status_code == 201, resp.text
+        assert resp.status_code == 202, resp.text
 
     resp = await client.get("/api/v1/vps?page=1&page_size=2")
     body = resp.json()

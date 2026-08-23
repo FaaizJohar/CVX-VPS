@@ -60,9 +60,6 @@ def clamp_resize(value_cols: object, value_rows: object) -> tuple[int, int]:
     return max(2, min(500, cols)), max(2, min(200, rows))
 
 
-state = AgentState()
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     cfg = AgentConfig.load()
@@ -70,7 +67,18 @@ async def lifespan(app: FastAPI):
         raise RuntimeError("Agent is not enrolled. Run: cvx-agent enroll")
     state.credential = cfg.credential
     state.lxd = LXDClient()
+    # Push telemetry + inventory to the control plane every 30s so dashboards
+    # stay live without the panel polling LXD through us.
+    from cvx_agent.heartbeat import heartbeat_loop
+
+    stop = asyncio.Event()
+    beat_task = asyncio.create_task(heartbeat_loop(stop))
     yield
+    stop.set()
+    try:
+        await asyncio.wait_for(beat_task, timeout=5.0)
+    except (asyncio.TimeoutError, asyncio.CancelledError):
+        beat_task.cancel()
     if state.lxd:
         await state.lxd.close()
 

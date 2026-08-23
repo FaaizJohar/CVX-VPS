@@ -70,6 +70,9 @@ class VPS(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     ssh_keys: Mapped[list[Any]] = mapped_column(JSON, default=list, nullable=False)
     password_auth_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     root_password_set: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Transient, AES-encrypted copy of the initial root password used by the
+    # background provisioning worker; cleared as soon as provisioning ends.
+    root_password_encrypted: Mapped[str | None] = mapped_column(Text)
 
     # Security posture
     privileged: Mapped[bool] = mapped_column(Boolean, default=False)

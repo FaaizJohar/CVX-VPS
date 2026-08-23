@@ -59,3 +59,35 @@ def collect_load() -> dict[str, Any]:
 def _net_io() -> tuple[int, int, float]:
     counters = psutil.net_io_counters()
     return counters.bytes_recv, counters.bytes_sent, time.monotonic()
+
+
+def detect_public_ip() -> str | None:
+    """Best-effort public IP discovery via a configurable echo service.
+
+    Never fatal — the control plane accepts nodes whose public IP cannot be
+    determined (NAT'd or offline environments).
+    """
+    import os
+
+    import httpx
+
+    urls = [
+        u.strip()
+        for u in os.getenv(
+            "CVX_PUBLIC_IP_URLS",
+            "https://api.ipify.org,https://ipv4.icanhazip.com",
+        ).split(",")
+        if u.strip()
+    ]
+    for url in urls[:3]:
+        try:
+            resp = httpx.get(url, timeout=5.0)
+            value = resp.text.strip()
+            if resp.status_code == 200 and 0 < len(value) <= 64:
+                import ipaddress as _ip
+
+                _ip.ip_address(value)  # validate before reporting
+                return value
+        except Exception:
+            continue
+    return None

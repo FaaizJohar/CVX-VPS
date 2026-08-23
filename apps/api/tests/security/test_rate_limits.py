@@ -91,7 +91,7 @@ async def test_vps_create_is_limited_per_user(
             "node_id": node["id"], "image_id": str(ubuntu_image.id),
             "name": f"rl-{i}", "hostname": f"rl{i}.cvx.test",
         })
-        assert last_resp.status_code == 201, last_resp.text
+        assert last_resp.status_code == 202, last_resp.text
     last_resp = await client.post("/api/v1/vps", json={
         "node_id": node["id"], "image_id": str(ubuntu_image.id),
         "name": "rl-over", "hostname": "rlover.cvx.test",

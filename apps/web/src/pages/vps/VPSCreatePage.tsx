@@ -57,10 +57,6 @@ const initialDraft: Draft = {
   root_password: "",
 };
 
-function GiB(mb: number): string {
-  return `${(mb / 1024).toFixed(mb % 1024 === 0 ? 0 : 1)} GB`;
-}
-
 export default function VPSCreatePage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -106,7 +102,7 @@ export default function VPSCreatePage() {
 
   const create = useMutation({
     mutationFn: () =>
-      api.post<{ id: string }>("/api/v1/vps", {
+      api.post<{ job_id: string; vps_id: string; status: string }>("/api/v1/vps", {
         deployment_mode: draft.mode,
         node_id: draft.mode === "node" ? (selectedNode?.id ?? undefined) : undefined,
         image_id: draft.image_id || undefined,
@@ -126,10 +122,12 @@ export default function VPSCreatePage() {
         root_password:
           draft.password_auth_enabled && draft.root_password ? draft.root_password : null,
       }),
-    onSuccess: (vps) => {
+    onSuccess: (job) => {
       void qc.invalidateQueries({ queryKey: ["vps"] });
       void qc.invalidateQueries({ queryKey: ["nodes"] });
-      navigate(`/app/vps/${vps.id}`);
+      // Provisioning now runs as a background job; the workspace shows live
+      // progress while it completes.
+      navigate(`/app/vps/${job.vps_id}`);
     },
     onError: (e) => setError(e instanceof ApiError ? e.message : "Creation failed."),
   });
@@ -193,16 +191,59 @@ export default function VPSCreatePage() {
 
       <div className="panel min-h-[320px] p-5">
         {step === 0 && (
-          <div className="space-y-4">
-            <p className="stat-label">Where should this VPS run?</p>
+          <div className="space-y-5">
+            <div>
+              <h2 className="text-base font-semibold text-cvx-text">Where should this VPS run?</h2>
+              <p className="mt-1 text-xs text-cvx-faint">
+                You can move workloads between targets later — pick where it starts.
+              </p>
+            </div>
             <div className="grid gap-3 sm:grid-cols-2">
-              {/* Local machine card */}
+              {/* Deploy on Node */}
+              <button
+                type="button"
+                disabled={agentNodes.length === 0}
+                onClick={() =>
+                  setDraft({
+                    ...draft,
+                    mode: "node",
+                    node_id: draft.node_id || agentNodes[0]?.id || "",
+                  })
+                }
+                aria-pressed={draft.mode === "node"}
+                className={`group flex flex-col rounded-lg border p-4 text-left transition-all duration-200 ${
+                  draft.mode === "node"
+                    ? "border-cvx-accent bg-cvx-accent/10 ring-1 ring-cvx-accent/40"
+                    : agentNodes.length > 0
+                      ? "border-cvx-border hover:border-cvx-accent/40 hover:bg-cvx-accent/5"
+                      : "cursor-not-allowed border-cvx-border opacity-50"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span aria-hidden className="text-lg">🌐</span>
+                  <span className="rounded border border-cvx-border bg-cvx-raised px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-cvx-muted">
+                    {agentNodes.length} online
+                  </span>
+                </div>
+                <p className="mt-3 text-sm font-medium">Deploy on Node</p>
+                <p className="mt-1 text-xs leading-relaxed text-cvx-faint">
+                  Run this VPS on a connected infrastructure node.
+                </p>
+                <p className="mt-3 space-x-1.5 text-[10px] uppercase tracking-wider text-cvx-faint">
+                  <span>Remote</span><span>·</span><span>Node agent</span><span>·</span><span>Multi-location</span>
+                </p>
+                <p className={`mt-auto pt-3 text-xs font-medium ${draft.mode === "node" ? "text-cvx-accent" : "text-cvx-muted group-hover:text-cvx-text"}`}>
+                  Choose Node →
+                </p>
+              </button>
+
+              {/* Deploy Locally */}
               <button
                 type="button"
                 disabled={!localAvailable}
                 onClick={() => setDraft({ ...draft, mode: "local" })}
                 aria-pressed={draft.mode === "local"}
-                className={`rounded-lg border p-4 text-left transition-all ${
+                className={`group flex flex-col rounded-lg border p-4 text-left transition-all duration-200 ${
                   draft.mode === "local"
                     ? "border-violet-500/60 bg-violet-500/10 ring-1 ring-violet-500/40"
                     : localAvailable
@@ -218,52 +259,21 @@ export default function VPSCreatePage() {
                     </span>
                   )}
                 </div>
-                <p className="mt-2 text-sm font-medium">This Machine</p>
-                <p className="mt-1 text-xs text-cvx-faint">
-                  Deploy locally using the control plane host's own LXD — zero setup.
+                <p className="mt-3 text-sm font-medium">Deploy Locally</p>
+                <p className="mt-1 text-xs leading-relaxed text-cvx-faint">
+                  Run this VPS directly on the machine running CVX.
                 </p>
-                {localStatus?.available && (
-                  <p className="mono-data mt-2 text-xs text-cvx-muted">
-                    {localStatus.cpu_cores} cores · {GiB(localStatus.ram_total_mb ?? 0)} RAM ·{" "}
-                    {localStatus.storage_total_gb} GB storage
-                  </p>
-                )}
-                {!localAvailable && (
-                  <p className="mt-2 text-xs text-cvx-faint">
-                    Unavailable on this installation.
-                  </p>
-                )}
-              </button>
-
-              {/* Remote node card */}
-              <button
-                type="button"
-                disabled={agentNodes.length === 0}
-                onClick={() =>
-                  setDraft({
-                    ...draft,
-                    mode: "node",
-                    node_id: draft.node_id || agentNodes[0]?.id || "",
-                  })
-                }
-                aria-pressed={draft.mode === "node"}
-                className={`rounded-lg border p-4 text-left transition-all ${
-                  draft.mode === "node"
-                    ? "border-cvx-accent bg-cvx-accent/10 ring-1 ring-cvx-accent/40"
-                    : agentNodes.length > 0
-                      ? "border-cvx-border hover:border-cvx-accent/40 hover:bg-cvx-accent/5"
-                      : "cursor-not-allowed border-cvx-border opacity-50"
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span aria-hidden className="text-lg">🌐</span>
-                  <span className="rounded border border-cvx-border bg-cvx-raised px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-cvx-muted">
-                    {agentNodes.length} online
-                  </span>
-                </div>
-                <p className="mt-2 text-sm font-medium">On a Node</p>
-                <p className="mt-1 text-xs text-cvx-faint">
-                  Deploy to an enrolled node running the CVX agent.
+                <p className="mt-3 space-x-1.5 text-[10px] uppercase tracking-wider text-cvx-faint">
+                  <span>Local compute</span><span>·</span><span>No agent</span>
+                  {localStatus?.resources && (
+                    <>
+                      <span>·</span>
+                      <span>{localStatus.resources.cpu_cores} cores</span>
+                    </>
+                  )}
+                </p>
+                <p className={`mt-auto pt-3 text-xs font-medium ${draft.mode === "local" ? "text-violet-400" : "text-cvx-muted group-hover:text-cvx-text"}`}>
+                  Use This Machine →
                 </p>
               </button>
             </div>
@@ -464,7 +474,7 @@ export default function VPSCreatePage() {
           Back
         </Button>
         <Button type="submit" variant="primary" disabled={!canAdvance() || create.isPending}>
-          {step < STEPS.length - 1 ? "Continue" : create.isPending ? "Provisioning…" : "Create VPS"}
+          {step < STEPS.length - 1 ? "Continue" : create.isPending ? "Deploying…" : "Deploy VPS"}
         </Button>
       </div>
     </form>

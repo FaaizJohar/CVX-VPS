@@ -51,9 +51,15 @@ class VPSService:
     # ------------------------------------------------------------- provisioning
 
     @staticmethod
-    async def create_vps(
-        db: AsyncSession, *, data: VPSCreate, owner: User, ip: str | None = None
-    ) -> VPS:
+    async def prepare_vps(
+        db: AsyncSession, *, data: VPSCreate, owner: User
+    ) -> tuple[VPS, Node]:
+        """Validate the request and persist a PROVISIONING VPS row.
+
+        Runs synchronously inside the API request so validation/capacity/IP
+        errors surface immediately. The actual provider call happens later in
+        ``provision_vps`` (background worker) or inline via ``create_vps``.
+        """
         if data.deployment_mode == "local":
             node = await NodeService.get_or_create_local_node(db)
             if node is None:
@@ -107,6 +113,8 @@ class VPSService:
             if assigned_ipv4 is None:
                 raise ValidationError(f"IPv4 {ipv4} is not available on this node.")
 
+        from app.core.security import encrypt_secret
+
         vps = VPS(
             node_id=node.id,
             owner_id=owner.id,
@@ -126,6 +134,11 @@ class VPSService:
             ssh_keys=data.ssh_keys,
             password_auth_enabled=data.password_auth_enabled,
             root_password_set=bool(data.root_password) and data.password_auth_enabled,
+            root_password_encrypted=(
+                encrypt_secret(data.root_password)
+                if data.root_password and data.password_auth_enabled
+                else None
+            ),
             raw_config={},
         )
         db.add(vps)
@@ -150,61 +163,146 @@ class VPSService:
                 raise ValidationError(f"IPv4 {ipv4} is not available on this node.")
             vps.ipv4 = assigned_ipv4.address
 
+        return vps, node
+
+    @staticmethod
+    async def provision_vps(*, vps_id: uuid.UUID, db: AsyncSession | None = None) -> str | None:
+        """Background-worker entrypoint: perform the provider call.
+
+        Uses its own DB sessions unless one is supplied (the synchronous
+        convenience path reuses the caller's transaction). Returns ``None``
+        on success or an error string on failure (the caller marks the job
+        failed; the VPS row is moved to ERROR here).
+        """
+        if db is not None:
+            return await VPSService._provision_in_session(db, vps_id=vps_id)
+
+        from app.db.session import get_session_factory
+
+        factory = get_session_factory()
+        async with factory() as session:
+            return await VPSService._provision_in_session(session, vps_id=vps_id)
+
+    @staticmethod
+    async def _provision_in_session(db: AsyncSession, *, vps_id: uuid.UUID) -> str | None:
+        vps = await db.get(VPS, vps_id)
+        if vps is None:
+            return "VPS row vanished before provisioning."
+        if vps.status == VPSStatus.RUNNING:
+            # Crash-recovery double run; provisioning already completed.
+            return None
+        if vps.status != VPSStatus.PROVISIONING:
+            return "VPS is no longer awaiting provisioning."
+
+        node = await db.get(Node, vps.node_id)
+        image = await db.get(Image, vps.image_id) if vps.image_id else None
+        if node is None or image is None:
+            await VPSService._fail_vps(db, vps, "node_or_image_missing")
+            await db.commit()
+            return "Node or image missing for provisioning."
+
+        root_password = None
+        if vps.root_password_encrypted:
+            from app.core.security import decrypt_secret
+
+            try:
+                root_password = decrypt_secret(vps.root_password_encrypted)
+            except Exception:
+                log.warning("could not decrypt stored root password ref=%s", vps.provider_ref)
+
+        spec = InstanceSpec(
+            name=vps.provider_ref,
+            image_source=(
+                f"{image.source_remote}:{image.source_identifier}"
+                if image.source_type == "remote"
+                else image.source_identifier
+            ),
+            cpu_limit=vps.cpu_limit,
+            ram_mb=vps.ram_mb,
+            swap_mb=vps.swap_mb,
+            disk_gb=vps.disk_gb,
+            process_limit=vps.process_limit,
+            hostname=vps.hostname,
+            network_name=vps.network_name,
+            ipv4=vps.ipv4,
+            ipv6=vps.ipv6,
+            dns_servers=list(vps.dns_servers or []),
+            ssh_keys=list(vps.ssh_keys or []),
+            root_password=root_password if vps.password_auth_enabled else None,
+        )
+
         try:
             provider = NodeService.provider_for(node)
-            spec = InstanceSpec(
-                name=ref,
-                image_source=(
-                    f"{image.source_remote}:{image.source_identifier}"
-                    if image.source_type == "remote"
-                    else image.source_identifier
-                ),
-                cpu_limit=data.cpu_limit,
-                ram_mb=data.ram_mb,
-                swap_mb=data.swap_mb,
-                disk_gb=data.disk_gb,
-                process_limit=data.process_limit,
-                hostname=data.hostname,
-                network_name=data.network_name,
-                ipv4=data.ipv4,
-                ipv6=data.ipv6,
-                dns_servers=data.dns_servers,
-                ssh_keys=data.ssh_keys,
-                root_password=data.root_password if data.password_auth_enabled else None,
-            )
             state = await provider.create_instance(spec)
-
-            vps.status = VPSStatus.RUNNING
-            ips = state.ips or {}
-            if not vps.ipv4 and ips.get("eth0"):
-                vps.ipv4 = ips["eth0"]
-            vps.mac_address = (state.raw or {}).get("mac")
         except Exception as e:
-            vps.status = VPSStatus.ERROR
-            vps.provision_error = str(e)[:2000]
-            if assigned_ipv4 is not None:
-                assigned_ipv4.status = IPStatus.AVAILABLE
-                assigned_ipv4.vps_id = None
-            log.exception("vps provision failed ref=%s", ref)
-            raise ProviderError("Provisioning failed on the node.") from e
+            log.exception("vps provision failed ref=%s", vps.provider_ref)
+            await VPSService._fail_vps(db, vps, str(e)[:2000])
+            await db.commit()
+            return f"Provisioning failed: {e}"[:500]
+
+        vps.status = VPSStatus.RUNNING
+        ips = state.ips or {}
+        if not vps.ipv4 and ips.get("eth0"):
+            vps.ipv4 = ips["eth0"]
+        vps.mac_address = (state.raw or {}).get("mac")
+        # Transient credential no longer needed once cloud-init has run.
+        vps.root_password_encrypted = None
 
         await record_audit(
             db,
             action="vps.create",
-            actor_user_id=str(owner.id),
+            actor_user_id=str(vps.owner_id),
             resource_type="vps",
             resource_id=str(vps.id),
-            node_id=str(node.id),
+            node_id=str(vps.node_id),
             detail={"name": vps.name, "image": image.alias},
-            ip_address=ip,
         )
         await record_log(
             db,
             source="vps",
             message=f"VPS {vps.name} provisioned on node {node.name}",
             vps_id=str(vps.id),
-            node_id=str(node.id),
+            node_id=str(vps.node_id),
         )
+        await db.commit()
+        return None
+
+    @staticmethod
+    async def _fail_vps(db: AsyncSession, vps: VPS, error: str) -> None:
+        """Move a VPS to ERROR and release any statically assigned IP."""
+        vps.status = VPSStatus.ERROR
+        vps.provision_error = error
+        ips = await db.execute(
+            select(IPAddress).where(IPAddress.vps_id == vps.id)
+        )
+        for rec in ips.scalars():
+            rec.status = IPStatus.AVAILABLE
+            rec.vps_id = None
+
+    @staticmethod
+    async def mark_provision_failed(*, vps_id: uuid.UUID, error: str) -> None:
+        """Standalone-session failure path used by the worker."""
+        from app.db.session import get_session_factory
+
+        factory = get_session_factory()
+        async with factory() as db:
+            vps = await db.get(VPS, vps_id)
+            if vps is None:
+                return
+            await VPSService._fail_vps(db, vps, error)
+            await db.commit()
+
+    @staticmethod
+    async def create_vps(
+        db: AsyncSession, *, data: VPSCreate, owner: User, ip: str | None = None
+    ) -> VPS:
+        """Synchronous convenience path (kept for tests/tools): prepare then
+        provision inline."""
+        vps, _node = await VPSService.prepare_vps(db, data=data, owner=owner)
+        err = await VPSService.provision_vps(vps_id=vps.id, db=db)
+        await db.refresh(vps)
+        if err is not None:
+            raise ProviderError(err)
         return vps
 
     @staticmethod

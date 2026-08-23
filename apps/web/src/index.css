@@ -14,9 +14,25 @@
   body {
     @apply bg-cvx-bg text-cvx-text font-sans antialiased;
     font-feature-settings: "cv02", "cv03", "cv04", "ss01";
+    letter-spacing: -0.006em;
   }
   ::selection {
     @apply bg-cvx-accent/30;
+  }
+  /* Visible, consistent focus for keyboard users everywhere. */
+  :focus-visible {
+    outline: 2px solid theme("colors.cvx.accent");
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }
 
@@ -38,5 +54,12 @@
   .scrollbar-thin {
     scrollbar-width: thin;
     scrollbar-color: #2a2f38 transparent;
+  }
+  /* Thin resource bar used on dashboards and node cards */
+  .resource-track {
+    @apply h-1 w-full overflow-hidden rounded-full bg-cvx-border;
+  }
+  .resource-fill {
+    @apply h-full rounded-full transition-all duration-500 ease-out;
   }
 }

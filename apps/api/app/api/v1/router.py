@@ -7,6 +7,7 @@ from app.api.v1.routes import (
     auth,
     console,
     images,
+    jobs,
     logs,
     metrics,
     networks,
@@ -28,6 +29,7 @@ api_router.include_router(metrics.router)
 api_router.include_router(images.router)
 api_router.include_router(networks.router)
 api_router.include_router(networks.ip_router)
+api_router.include_router(jobs.router)
 api_router.include_router(logs.router)
 api_router.include_router(apikeys.router)
 api_router.include_router(admin.router)

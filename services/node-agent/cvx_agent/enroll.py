@@ -5,7 +5,7 @@ import sys
 import httpx
 
 from cvx_agent.config import AgentConfig, CONFIG_DIR
-from cvx_agent.metrics import collect_system_info
+from cvx_agent.metrics import collect_system_info, detect_public_ip
 
 
 def detect_lxd_version() -> str | None:
@@ -47,6 +47,14 @@ def enroll(control_plane: str, token: str) -> None:
         **hello,
         "lxd_version": lxd_version,
     }
+
+    print("[*] Detecting public IP ...")
+    public_ip = detect_public_ip()
+    if public_ip:
+        payload["public_ip"] = public_ip
+        print(f"[+] Public IP detected ({public_ip})")
+    else:
+        print("[!] Public IP could not be automatically determined (continuing)")
 
     resp = httpx.post(
         f"{control_plane}/api/v1/agent/enroll", json=payload, timeout=30.0

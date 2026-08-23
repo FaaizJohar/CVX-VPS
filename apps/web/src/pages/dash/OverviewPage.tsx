@@ -1,11 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api } from "@/lib/api";
-import type { VPS } from "@/types";
+import type { LocalStatus, VPS } from "@/types";
 import { Stat, Card, CardHeader } from "@/components/ui/Card";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ModeBadge } from "@/components/ui/ModeBadge";
 import { PageLoader } from "@/components/ui/Loading";
+import { Button } from "@/components/ui/Button";
 import { fmtRelative } from "@/lib/format";
 
 interface DashboardData {
@@ -50,20 +51,71 @@ export default function OverviewPage() {
     queryKey: ["vps", "recent"],
     queryFn: () => api.get<{ items: VPS[] }>("/api/v1/vps?page=1&page_size=6"),
   });
+  const { data: localStatus } = useQuery({
+    queryKey: ["nodes", "local", "status"],
+    queryFn: () => api.get<LocalStatus>("/api/v1/nodes/local/status"),
+    staleTime: 30_000,
+  });
 
   if (!data) return <PageLoader />;
 
   const alloc = data.allocation;
+  const computeTargets: Array<{
+    key: string;
+    name: string;
+    location: string;
+    online: boolean;
+    statusLabel: string;
+    cpuPercent: number | null;
+    ramUsedMb: number | null;
+    ramTotalMb: number | null;
+    href?: string;
+    badge?: "local";
+  }> = [];
+
+  if (localStatus) {
+    computeTargets.push({
+      key: "local",
+      name: "LOCAL",
+      location: localStatus.hostname ?? "This machine",
+      online: localStatus.state === "ready",
+      statusLabel:
+        (localStatus.state ?? "not_configured").replace("_", " "),
+      cpuPercent: null,
+      ramUsedMb: null,
+      ramTotalMb: localStatus.resources?.ram_total_mb ?? null,
+      badge: "local",
+    });
+  }
+  for (const n of data.nodes.items) {
+    if (n.status === "removed") continue;
+    computeTargets.push({
+      key: n.id,
+      name: n.name.toUpperCase(),
+      location: n.location,
+      online: n.status === "online" || n.status === "maintenance",
+      statusLabel: n.status,
+      cpuPercent: n.cpu_percent,
+      ramUsedMb: n.ram_used_mb,
+      ramTotalMb: n.ram_total_mb,
+      href: `/app/admin/nodes/${n.id}`,
+    });
+  }
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-xl font-semibold">Overview</h1>
-        <p className="mt-0.5 text-sm text-cvx-muted">Infrastructure at a glance</p>
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold">Overview</h1>
+          <p className="mt-0.5 text-sm text-cvx-muted">Infrastructure at a glance</p>
+        </div>
+        <Button variant="primary" onClick={() => (window.location.href = "/app/vps/new")}>
+          Create VPS
+        </Button>
       </header>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Total VPS" value={data.vps.total} sub={`${data.vps.running} running`} />
+        <Stat label="VPS" value={data.vps.total} sub={`${data.vps.running} running`} />
         <Stat label="Nodes" value={data.nodes.total} sub={`${data.nodes.online} online`} />
         <Stat
           label="CPU allocated"
@@ -76,6 +128,85 @@ export default function OverviewPage() {
           sub={alloc.ram_capacity_mb ? `of ${(alloc.ram_capacity_mb / 1024).toFixed(0)} GB` : undefined}
         />
       </div>
+
+      {/* Compute — where does capacity live? */}
+      <section aria-labelledby="compute-heading">
+        <h2 id="compute-heading" className="stat-label mb-2">Compute</h2>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {computeTargets.map((t) => {
+            const inner = (
+              <>
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <span
+                      aria-hidden
+                      className={`inline-block h-1.5 w-1.5 rounded-full ${
+                        t.online ? "bg-emerald-400" : "bg-zinc-600"
+                      }`}
+                    />
+                    <span className="font-mono text-sm font-medium">{t.name}</span>
+                    {t.badge === "local" && <ModeBadge mode="local" />}
+                  </span>
+                  <span
+                    className={`text-[10px] uppercase tracking-wider ${
+                      t.online ? "text-emerald-400" : "text-cvx-faint"
+                    }`}
+                  >
+                    ● {t.statusLabel}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-cvx-faint">{t.location}</p>
+                {(t.cpuPercent != null || (t.ramTotalMb != null && t.ramTotalMb > 0)) && (
+                  <div className="mt-3 space-y-1.5">
+                    {t.cpuPercent != null && (
+                      <div>
+                        <div className="flex justify-between text-[10px] uppercase tracking-wider text-cvx-faint">
+                          <span>CPU</span>
+                          <span className="mono-data">{t.cpuPercent.toFixed(0)}%</span>
+                        </div>
+                        <div className="resource-track mt-1">
+                          <div
+                            className="resource-fill bg-cvx-accent"
+                            style={{ width: `${Math.min(100, t.cpuPercent)}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    {t.ramTotalMb != null && t.ramTotalMb > 0 && t.ramUsedMb != null && (
+                      <div>
+                        <div className="flex justify-between text-[10px] uppercase tracking-wider text-cvx-faint">
+                          <span>Memory</span>
+                          <span className="mono-data">
+                            {(t.ramUsedMb / 1024).toFixed(1)} / {(t.ramTotalMb / 1024).toFixed(0)} GB
+                          </span>
+                        </div>
+                        <div className="resource-track mt-1">
+                          <div
+                            className="resource-fill bg-cvx-accent"
+                            style={{ width: `${Math.min(100, (t.ramUsedMb / t.ramTotalMb) * 100)}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            );
+            const cls =
+              "panel block p-4 transition-colors duration-200 hover:border-cvx-border-strong";
+            return t.href ? (
+              <Link key={t.key} to={t.href} className={cls}>{inner}</Link>
+            ) : (
+              <div key={t.key} className={cls.replace(" hover:", " ")}>{inner}</div>
+            );
+          })}
+          {computeTargets.length === 0 && (
+            <div className="panel p-6 text-center text-sm text-cvx-faint sm:col-span-2 xl:col-span-3">
+              No compute targets yet — enable local deployment or connect a node.
+            </div>
+          )}
+        </div>
+      </section>
 
       <div className="grid gap-4 xl:grid-cols-2">
         <Card>

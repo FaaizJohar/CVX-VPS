@@ -99,7 +99,7 @@ async def test_create_vps_reports_root_password_set(
         client, node["id"], str(ubuntu_image.id),
         password_auth_enabled=True, root_password="BootStrap!2026",
     )
-    assert resp.status_code == 201, resp.text
+    assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body.get("root_password_set") is True
 
@@ -123,6 +123,6 @@ async def test_ssh_keys_reach_the_provider(
     await login(client, "owner@example.com", "OwnerPass123!")
     node = await enroll_node(client)
     resp = await create_vps(client, node["id"], str(ubuntu_image.id), ssh_keys=[key])
-    assert resp.status_code == 201, resp.text
+    assert resp.status_code == 200, resp.text
     spec = fake_provider.created[0]
     assert spec.ssh_keys == [key]
