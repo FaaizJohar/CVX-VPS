@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { PageLoader } from "@/components/ui/Loading";
+import { ToastProvider } from "@/components/ui/Toast";
 
 const LoginPage = lazy(() => import("./pages/auth/LoginPage"));
 const DashboardLayout = lazy(() => import("./layouts/DashboardLayout").then((m) => ({ default: m.DashboardLayout })));
@@ -27,8 +28,9 @@ function Protected({ children }: { children: React.ReactNode }) {
 
 export function App() {
   return (
-    <Suspense fallback={<PageLoader />}>
-      <Routes>
+    <ToastProvider>
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route
           path="/app"
@@ -52,7 +54,8 @@ export function App() {
           <Route path="admin/apikeys" element={<AdminApiKeysPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/app" replace />} />
-      </Routes>
-    </Suspense>
+        </Routes>
+      </Suspense>
+    </ToastProvider>
   );
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth, useIsAdmin } from "@/lib/auth";
 import { Spinner } from "@/components/ui/Loading";
 import { CommandPalette } from "@/components/ui/CommandPalette";
@@ -18,11 +18,12 @@ const adminNav = [
   { to: "/app/admin/apikeys", label: "API Keys" },
 ];
 
-function NavItem({ to, label, end }: { to: string; label: string; end?: boolean }) {
+function NavItem({ to, label, end, onNavigate }: { to: string; label: string; end?: boolean; onNavigate?: () => void }) {
   return (
     <NavLink
       to={to}
       end={end}
+      onClick={onNavigate}
       className={({ isActive }) =>
         `block rounded-md px-3 py-2 text-sm transition-colors ${
           isActive
@@ -33,6 +34,15 @@ function NavItem({ to, label, end }: { to: string; label: string; end?: boolean 
     >
       {label}
     </NavLink>
+  );
+}
+
+function PageTransition({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
+  return (
+    <div key={location.pathname} className="h-full animate-fade-up">
+      {children}
+    </div>
   );
 }
 
@@ -48,6 +58,9 @@ export function DashboardLayout() {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setPaletteOpen((v) => !v);
+      }
+      if (e.key === "Escape") {
+        setMobileOpen(false);
       }
     }
     window.addEventListener("keydown", onKey);
@@ -66,9 +79,11 @@ export function DashboardLayout() {
     return null;
   }
 
+  const closeMobile = () => setMobileOpen(false);
+
   const sidebar = (
     <nav className="flex h-full flex-col gap-6 overflow-y-auto p-4 scrollbar-thin">
-      <NavLink to="/app" className="flex items-center gap-2 px-2 pt-1">
+      <NavLink to="/app" onClick={closeMobile} className="flex items-center gap-2 px-2 pt-1">
         <span className="font-mono text-lg font-semibold tracking-tight text-cvx-text">CVX</span>
         <span className="rounded border border-cvx-border px-1 py-0.5 text-[9px] uppercase tracking-widest text-cvx-faint">
           v1.1
@@ -90,7 +105,7 @@ export function DashboardLayout() {
           Infrastructure
         </p>
         {mainNav.map((n) => (
-          <NavItem key={n.to} {...n} />
+          <NavItem key={n.to} {...n} onNavigate={closeMobile} />
         ))}
       </div>
 
@@ -100,7 +115,7 @@ export function DashboardLayout() {
             Administration
           </p>
           {adminNav.map((n) => (
-            <NavItem key={n.to} {...n} />
+            <NavItem key={n.to} {...n} onNavigate={closeMobile} />
           ))}
         </div>
       )}
@@ -132,8 +147,8 @@ export function DashboardLayout() {
       {/* Mobile drawer */}
       {mobileOpen && (
         <div className="fixed inset-0 z-40 lg:hidden">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setMobileOpen(false)} />
-          <aside className="absolute left-0 top-0 h-full w-64 border-r border-cvx-border bg-cvx-panel">
+          <div className="animate-fade-in absolute inset-0 bg-black/60" onClick={closeMobile} />
+          <aside className="animate-slide-left absolute left-0 top-0 h-full w-64 border-r border-cvx-border bg-cvx-panel">
             {sidebar}
           </aside>
         </div>
@@ -162,7 +177,9 @@ export function DashboardLayout() {
         </header>
 
         <main className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6 scrollbar-thin">
-          <Outlet />
+          <PageTransition>
+            <Outlet />
+          </PageTransition>
         </main>
       </div>
     </div>

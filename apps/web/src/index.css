@@ -63,3 +63,65 @@
     @apply h-full rounded-full transition-all duration-500 ease-out;
   }
 }
+
+@layer utilities {
+  @keyframes cvx-fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes cvx-fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes cvx-slide-left {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: none;
+    }
+  }
+  @keyframes cvx-shimmer {
+    from {
+      background-position: -200% 0;
+    }
+    to {
+      background-position: 200% 0;
+    }
+  }
+  .animate-fade-up {
+    animation: cvx-fade-up 0.35s cubic-bezier(0.21, 0.68, 0.36, 0.98) both;
+  }
+  .animate-fade-in {
+    animation: cvx-fade-in 0.25s ease-out both;
+  }
+  .animate-slide-left {
+    animation: cvx-slide-left 0.25s cubic-bezier(0.21, 0.68, 0.36, 0.98) both;
+  }
+  /* Shimmering placeholder block for loading states. */
+  .skeleton {
+    @apply relative overflow-hidden rounded-md bg-cvx-raised;
+  }
+  .skeleton::after {
+    content: "";
+    @apply absolute inset-0;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.05),
+      transparent
+    );
+    background-size: 200% 100%;
+    animation: cvx-shimmer 1.4s ease-in-out infinite;
+  }
+}

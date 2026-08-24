@@ -7,14 +7,18 @@ import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Input";
 import { ModeBadge } from "@/components/ui/ModeBadge";
 import { StatusBadge } from "@/components/ui/StatusBadge";
-import { EmptyState, PageLoader } from "@/components/ui/Loading";
+import { EmptyState, TableSkeleton } from "@/components/ui/Loading";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { useToast } from "@/components/ui/Toast";
 import { fmtDate } from "@/lib/format";
 
 export default function VPSListPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const toast = useToast();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<VPS | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["vps", "list", search, statusFilter],
@@ -22,17 +26,23 @@ export default function VPSListPage() {
       api.get<{ items: VPS[]; total: number }>(
         `/api/v1/vps?page=1&page_size=100${search ? `&search=${encodeURIComponent(search)}` : ""}${statusFilter ? `&status=${statusFilter}` : ""}`,
       ),
+    placeholderData: (prev) => prev,
   });
 
   const deleteVps = useMutation({
     mutationFn: (id: string) => api.delete(`/api/v1/vps/${id}`),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["vps"] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["vps"] });
+      toast.success(`${pendingDelete?.name ?? "VPS"} deleted.`);
+      setPendingDelete(null);
+    },
+    onError: (err) => {
+      toast.error(err instanceof ApiError ? err.message : "Delete failed.");
+    },
   });
 
-  if (isLoading) return <PageLoader />;
-
   return (
-    <div className="space-y-4">
+    <div className="animate-fade-up space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold">Virtual Servers</h1>
@@ -49,8 +59,14 @@ export default function VPSListPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="max-w-xs"
+          aria-label="Search virtual servers"
         />
-        <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="w-40">
+        <Select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="w-40"
+          aria-label="Filter by status"
+        >
           <option value="">All statuses</option>
           <option value="running">Running</option>
           <option value="stopped">Stopped</option>
@@ -58,20 +74,26 @@ export default function VPSListPage() {
         </Select>
       </div>
 
-      {!data ? (
-        <PageLoader />
-      ) : data.items.length === 0 ? (
+      {!data && isLoading ? (
+        <TableSkeleton rows={5} cols={4} />
+      ) : data && data.items.length === 0 ? (
         <EmptyState
-          title="No virtual servers"
-          hint="Provision your first VPS from the node pool."
+          title={search || statusFilter ? "No matches" : "No virtual servers"}
+          hint={
+            search || statusFilter
+              ? "Try a different search or clear the filters."
+              : "Provision your first VPS from the node pool."
+          }
           action={
-            <Button variant="primary" onClick={() => navigate("/app/vps/new")}>
-              Create VPS
-            </Button>
+            search || statusFilter ? undefined : (
+              <Button variant="primary" onClick={() => navigate("/app/vps/new")}>
+                Create VPS
+              </Button>
+            )
           }
         />
       ) : (
-        <div className="panel overflow-hidden">
+        <div className="panel animate-fade-in overflow-hidden">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-cvx-border text-left text-[11px] uppercase tracking-wider text-cvx-faint">
@@ -84,11 +106,11 @@ export default function VPSListPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-cvx-border">
-              {data.items.map((v) => (
-                <tr key={v.id} className="hover:bg-cvx-raised/40">
+              {(data?.items ?? []).map((v) => (
+                <tr key={v.id} className="group transition-colors hover:bg-cvx-raised/40">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <Link to={`/app/vps/${v.id}`} className="font-mono hover:text-cvx-accent-hover">
+                      <Link to={`/app/vps/${v.id}`} className="font-mono transition-colors group-hover:text-cvx-accent-hover">
                         {v.name}
                       </Link>
                       <ModeBadge mode={v.deployment_mode} />
@@ -108,19 +130,11 @@ export default function VPSListPage() {
                     {fmtDate(v.created_at)}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <div className="flex justify-end gap-2">
+                    <div className="flex justify-end gap-2 opacity-100 transition-opacity lg:opacity-0 lg:group-hover:opacity-100">
                       <Link to={`/app/vps/${v.id}`}>
                         <Button size="sm">Open</Button>
                       </Link>
-                      <Button
-                        size="sm"
-                        variant="danger"
-                        onClick={() => {
-                          if (window.confirm(`Delete ${v.name}? This cannot be undone.`)) {
-                            deleteVps.mutate(v.id);
-                          }
-                        }}
-                      >
+                      <Button size="sm" variant="danger" onClick={() => setPendingDelete(v)}>
                         Delete
                       </Button>
                     </div>
@@ -132,11 +146,16 @@ export default function VPSListPage() {
         </div>
       )}
 
-      {deleteVps.isError && (
-        <p className="text-xs text-cvx-danger">
-          {deleteVps.error instanceof ApiError ? deleteVps.error.message : "Delete failed."}
-        </p>
-      )}
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title={`Delete ${pendingDelete?.name ?? ""}?`}
+        message="The instance will be destroyed on its node and its IP address released. This cannot be undone."
+        confirmLabel="Delete"
+        danger
+        busy={deleteVps.isPending}
+        onConfirm={() => pendingDelete && deleteVps.mutate(pendingDelete.id)}
+        onClose={() => !deleteVps.isPending && setPendingDelete(null)}
+      />
     </div>
   );
 }

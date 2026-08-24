@@ -1,11 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import type { LocalStatus, VPS } from "@/types";
 import { Stat, Card, CardHeader } from "@/components/ui/Card";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ModeBadge } from "@/components/ui/ModeBadge";
-import { PageLoader } from "@/components/ui/Loading";
+import { Skeleton, StatGridSkeleton } from "@/components/ui/Loading";
 import { Button } from "@/components/ui/Button";
 import { fmtRelative } from "@/lib/format";
 
@@ -42,6 +42,7 @@ interface DashboardData {
 }
 
 export default function OverviewPage() {
+  const navigate = useNavigate();
   const { data } = useQuery({
     queryKey: ["dashboard"],
     queryFn: () => api.get<DashboardData>("/api/v1/admin/dashboard"),
@@ -57,7 +58,29 @@ export default function OverviewPage() {
     staleTime: 30_000,
   });
 
-  if (!data) return <PageLoader />;
+  if (!data) {
+    return (
+      <div className="animate-fade-up space-y-6">
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-xl font-semibold">Overview</h1>
+            <p className="mt-0.5 text-sm text-cvx-muted">Infrastructure at a glance</p>
+          </div>
+        </header>
+        <StatGridSkeleton />
+        <div className="grid gap-4 xl:grid-cols-2">
+          {[0, 1].map((i) => (
+            <div key={i} className="panel space-y-3 p-4" role="status" aria-label="Loading">
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-12 w-2/3" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   const alloc = data.allocation;
   const computeTargets: Array<{
@@ -103,30 +126,38 @@ export default function OverviewPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="animate-fade-up space-y-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold">Overview</h1>
           <p className="mt-0.5 text-sm text-cvx-muted">Infrastructure at a glance</p>
         </div>
-        <Button variant="primary" onClick={() => (window.location.href = "/app/vps/new")}>
+        <Button variant="primary" onClick={() => navigate("/app/vps/new")}>
           Create VPS
         </Button>
       </header>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="VPS" value={data.vps.total} sub={`${data.vps.running} running`} />
-        <Stat label="Nodes" value={data.nodes.total} sub={`${data.nodes.online} online`} />
-        <Stat
-          label="CPU allocated"
-          value={alloc.cpu_allocated}
-          sub={alloc.cpu_capacity ? `of ${alloc.cpu_capacity} cores` : "no capacity detected"}
-        />
-        <Stat
-          label="RAM allocated"
-          value={`${(alloc.ram_allocated_mb / 1024).toFixed(1)} GB`}
-          sub={alloc.ram_capacity_mb ? `of ${(alloc.ram_capacity_mb / 1024).toFixed(0)} GB` : undefined}
-        />
+        {[
+          <Stat key="vps" label="VPS" value={data.vps.total} sub={`${data.vps.running} running`} />,
+          <Stat key="nodes" label="Nodes" value={data.nodes.total} sub={`${data.nodes.online} online`} />,
+          <Stat
+            key="cpu"
+            label="CPU allocated"
+            value={alloc.cpu_allocated}
+            sub={alloc.cpu_capacity ? `of ${alloc.cpu_capacity} cores` : "no capacity detected"}
+          />,
+          <Stat
+            key="ram"
+            label="RAM allocated"
+            value={`${(alloc.ram_allocated_mb / 1024).toFixed(1)} GB`}
+            sub={alloc.ram_capacity_mb ? `of ${(alloc.ram_capacity_mb / 1024).toFixed(0)} GB` : undefined}
+          />,
+        ].map((stat, i) => (
+          <div key={i} className="animate-fade-up" style={{ animationDelay: `${i * 50}ms` }}>
+            {stat}
+          </div>
+        ))}
       </div>
 
       {/* Compute — where does capacity live? */}
