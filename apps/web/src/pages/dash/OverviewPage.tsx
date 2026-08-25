@@ -1,12 +1,11 @@
+import { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
-import type { LocalStatus, VPS } from "@/types";
-import { Stat, Card, CardHeader } from "@/components/ui/Card";
-import { StatusBadge } from "@/components/ui/StatusBadge";
-import { ModeBadge } from "@/components/ui/ModeBadge";
-import { Skeleton, StatGridSkeleton } from "@/components/ui/Loading";
-import { Button } from "@/components/ui/Button";
+import type { LogItem, VPS } from "@/types";
+import { useAuth, useIsAdmin } from "@/lib/auth";
+import { StatGridSkeleton } from "@/components/ui/Loading";
+import { ErrorState } from "@/components/ui/ErrorState";
 import { fmtRelative } from "@/lib/format";
 
 interface DashboardData {
@@ -14,7 +13,7 @@ interface DashboardData {
   nodes: {
     total: number;
     online: number;
-    items: Array<{
+    items: {
       id: string;
       name: string;
       location: string;
@@ -22,7 +21,7 @@ interface DashboardData {
       cpu_percent: number | null;
       ram_used_mb: number | null;
       ram_total_mb: number | null;
-    }>;
+    }[];
   };
   allocation: {
     cpu_allocated: number;
@@ -32,49 +31,120 @@ interface DashboardData {
     storage_used_gb: number;
     storage_total_gb: number;
   };
-  security_alerts: Array<{
+  security_alerts: {
     id: string;
     severity: string;
     category: string;
     message: string;
     created_at: string;
-  }>;
+  }[];
+}
+
+function ResourceBar({ used, total, label }: { used: number; total: number; label: string }) {
+  const pct = total > 0 ? Math.min((used / total) * 100, 100) : 0;
+  const color =
+    pct > 90 ? "bg-cvx-danger" : pct > 70 ? "bg-cvx-warn" : "bg-cvx-accent";
+  return (
+    <div className="space-y-1">
+      <div className="flex items-baseline justify-between text-xs">
+        <span className="text-cvx-muted">{label}</span>
+        <span className="mono-data text-[11px]">
+          {used} / {total}
+        </span>
+      </div>
+      <div className="resource-track">
+        <div className={`resource-fill ${color}`} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function SeverityDot({ severity }: { severity: string }) {
+  const cls =
+    severity === "critical"
+      ? "bg-cvx-danger"
+      : severity === "warning"
+        ? "bg-cvx-warn"
+        : "bg-cvx-muted";
+  return <span className={`inline-block h-1.5 w-1.5 rounded-full ${cls}`} />;
 }
 
 export default function OverviewPage() {
   const navigate = useNavigate();
-  const { data } = useQuery({
-    queryKey: ["dashboard"],
+  const { user } = useAuth();
+  const isAdmin = useIsAdmin();
+
+  useEffect(() => {
+    document.title = "Overview — CVX";
+    return () => { document.title = "CVX — VPS Infrastructure Control"; };
+  }, []);
+
+  const { data: dash, isLoading: dashLoading, error: dashError, refetch: dashRefetch } = useQuery({
+    queryKey: ["admin", "dashboard"],
     queryFn: () => api.get<DashboardData>("/api/v1/admin/dashboard"),
-    refetchInterval: 30_000,
-  });
-  const { data: recentVps } = useQuery({
-    queryKey: ["vps", "recent"],
-    queryFn: () => api.get<{ items: VPS[] }>("/api/v1/vps?page=1&page_size=6"),
-  });
-  const { data: localStatus } = useQuery({
-    queryKey: ["nodes", "local", "status"],
-    queryFn: () => api.get<LocalStatus>("/api/v1/nodes/local/status"),
-    staleTime: 30_000,
+    enabled: isAdmin,
+    staleTime: 15_000,
   });
 
-  if (!data) {
+  const { data: vpsList } = useQuery({
+    queryKey: ["vps", "list"],
+    queryFn: () => api.get<{ items: VPS[]; total: number }>("/api/v1/vps?page=1&page_size=100"),
+    staleTime: 15_000,
+  });
+
+  const { data: logsData } = useQuery({
+    queryKey: ["logs", "recent"],
+    queryFn: () => api.get<{ items: LogItem[] }>("/api/v1/logs?page=1&page_size=8"),
+    staleTime: 10_000,
+  });
+
+  const vpsItems = vpsList?.items ?? [];
+  const totalVps = vpsList?.total ?? 0;
+  const runningVps = vpsItems.filter((v) => v.status === "running").length;
+  const stoppedVps = vpsItems.filter((v) => v.status === "stopped").length;
+  const errorVps = vpsItems.filter((v) => v.status === "error").length;
+  const recentLogs = logsData?.items ?? [];
+  const alloc = dash?.allocation;
+  const nodes = dash?.nodes;
+
+  if (dashLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="space-y-2">
+          <div className="skeleton h-8 w-64" />
+          <div className="skeleton h-4 w-96" />
+        </div>
+        <StatGridSkeleton count={4} />
+        <div className="skeleton h-48 w-full" />
+      </div>
+    );
+  }
+
+  if (dashError && isAdmin) {
+    return <ErrorState message="Failed to load dashboard data." onRetry={() => void dashRefetch()} />;
+  }
+
+  /* ── Non-admin fallback: just show VPS summary ── */
+  if (!isAdmin) {
     return (
       <div className="animate-fade-up space-y-6">
-        <header className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-semibold">Overview</h1>
-            <p className="mt-0.5 text-sm text-cvx-muted">Infrastructure at a glance</p>
-          </div>
+        <header className="space-y-1">
+          <h1 className="font-display text-2xl font-semibold tracking-tight text-cvx-text">
+            Welcome back, {user?.name || user?.email}
+          </h1>
+          <p className="text-sm text-cvx-muted">
+            {totalVps} virtual {totalVps === 1 ? "server" : "servers"} total, {runningVps} running.
+          </p>
         </header>
-        <StatGridSkeleton />
-        <div className="grid gap-4 xl:grid-cols-2">
-          {[0, 1].map((i) => (
-            <div key={i} className="panel space-y-3 p-4" role="status" aria-label="Loading">
-              <Skeleton className="h-8 w-full" />
-              <Skeleton className="h-12 w-full" />
-              <Skeleton className="h-12 w-full" />
-              <Skeleton className="h-12 w-2/3" />
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            { label: "Running", value: runningVps, color: "text-cvx-ok" },
+            { label: "Stopped", value: stoppedVps, color: "text-cvx-muted" },
+            { label: "Error", value: errorVps, color: "text-cvx-danger" },
+          ].map((s) => (
+            <div key={s.label} className="panel px-4 py-3">
+              <p className="stat-label">{s.label}</p>
+              <p className={`mt-1 font-display text-2xl font-semibold ${s.color}`}>{s.value}</p>
             </div>
           ))}
         </div>
@@ -82,233 +152,211 @@ export default function OverviewPage() {
     );
   }
 
-  const alloc = data.allocation;
-  const computeTargets: Array<{
-    key: string;
-    name: string;
-    location: string;
-    online: boolean;
-    statusLabel: string;
-    cpuPercent: number | null;
-    ramUsedMb: number | null;
-    ramTotalMb: number | null;
-    href?: string;
-    badge?: "local";
-  }> = [];
-
-  if (localStatus) {
-    computeTargets.push({
-      key: "local",
-      name: "LOCAL",
-      location: localStatus.hostname ?? "This machine",
-      online: localStatus.state === "ready",
-      statusLabel:
-        (localStatus.state ?? "not_configured").replace("_", " "),
-      cpuPercent: null,
-      ramUsedMb: null,
-      ramTotalMb: localStatus.resources?.ram_total_mb ?? null,
-      badge: "local",
-    });
-  }
-  for (const n of data.nodes.items) {
-    if (n.status === "removed") continue;
-    computeTargets.push({
-      key: n.id,
-      name: n.name.toUpperCase(),
-      location: n.location,
-      online: n.status === "online" || n.status === "maintenance",
-      statusLabel: n.status,
-      cpuPercent: n.cpu_percent,
-      ramUsedMb: n.ram_used_mb,
-      ramTotalMb: n.ram_total_mb,
-      href: `/app/admin/nodes/${n.id}`,
-    });
-  }
+  /* ── Admin dashboard ── */
+  const ramUsedGB = alloc ? alloc.ram_allocated_mb / 1024 : 0;
+  const ramTotalGB = alloc ? alloc.ram_capacity_mb / 1024 : 0;
+  const cpuPct = alloc && alloc.cpu_capacity > 0
+    ? Math.round((alloc.cpu_allocated / alloc.cpu_capacity) * 100)
+    : 0;
 
   return (
     <div className="animate-fade-up space-y-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold">Overview</h1>
-          <p className="mt-0.5 text-sm text-cvx-muted">Infrastructure at a glance</p>
-        </div>
-        <Button variant="primary" onClick={() => navigate("/app/vps/new")}>
-          Create VPS
-        </Button>
+      {/* ── Headline ── */}
+      <header className="space-y-1">
+        <h1 className="font-display text-2xl font-semibold tracking-tight text-cvx-text">
+          Infrastructure overview
+        </h1>
+        <p className="text-sm text-cvx-muted">
+          {totalVps} virtual {totalVps === 1 ? "server" : "servers"}
+          {nodes ? ` across ${nodes.total} ${nodes.total === 1 ? "node" : "nodes"}` : ""}
+          {nodes && nodes.online > 0 ? ` · ${nodes.online} online` : ""}
+        </p>
       </header>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {[
-          <Stat key="vps" label="VPS" value={data.vps.total} sub={`${data.vps.running} running`} />,
-          <Stat key="nodes" label="Nodes" value={data.nodes.total} sub={`${data.nodes.online} online`} />,
-          <Stat
-            key="cpu"
-            label="CPU allocated"
-            value={alloc.cpu_allocated}
-            sub={alloc.cpu_capacity ? `of ${alloc.cpu_capacity} cores` : "no capacity detected"}
-          />,
-          <Stat
-            key="ram"
-            label="RAM allocated"
-            value={`${(alloc.ram_allocated_mb / 1024).toFixed(1)} GB`}
-            sub={alloc.ram_capacity_mb ? `of ${(alloc.ram_capacity_mb / 1024).toFixed(0)} GB` : undefined}
-          />,
-        ].map((stat, i) => (
-          <div key={i} className="animate-fade-up" style={{ animationDelay: `${i * 50}ms` }}>
-            {stat}
-          </div>
-        ))}
+      {/* ── Dense summary row ── */}
+      <div className="panel divide-y divide-cvx-border">
+        <div className="grid grid-cols-2 gap-px bg-cvx-border sm:grid-cols-4">
+          {[
+            { label: "VPS total", value: String(totalVps), accent: false },
+            { label: "Running", value: String(runningVps), accent: true },
+            { label: "Nodes online", value: nodes ? `${nodes.online}/${nodes.total}` : "—", accent: false },
+            { label: "CPU alloc", value: `${cpuPct}%`, accent: cpuPct > 90 },
+          ].map((s) => (
+            <div key={s.label} className="bg-cvx-panel px-4 py-3">
+              <p className="stat-label">{s.label}</p>
+              <p className={`mt-1 font-display text-xl font-semibold ${s.accent ? "text-cvx-ok" : "text-cvx-text"}`}>
+                {s.value}
+              </p>
+            </div>
+          ))}
+        </div>
       </div>
 
-      {/* Compute — where does capacity live? */}
-      <section aria-labelledby="compute-heading">
-        <h2 id="compute-heading" className="stat-label mb-2">Compute</h2>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {computeTargets.map((t) => {
-            const inner = (
-              <>
-                <div className="flex items-center justify-between">
-                  <span className="flex items-center gap-2">
-                    <span
-                      aria-hidden
-                      className={`inline-block h-1.5 w-1.5 rounded-full ${
-                        t.online ? "bg-emerald-400" : "bg-zinc-600"
-                      }`}
-                    />
-                    <span className="font-mono text-sm font-medium">{t.name}</span>
-                    {t.badge === "local" && <ModeBadge mode="local" />}
-                  </span>
-                  <span
-                    className={`text-[10px] uppercase tracking-wider ${
-                      t.online ? "text-emerald-400" : "text-cvx-faint"
-                    }`}
-                  >
-                    ● {t.statusLabel}
-                  </span>
-                </div>
-                <p className="mt-1 text-xs text-cvx-faint">{t.location}</p>
-                {(t.cpuPercent != null || (t.ramTotalMb != null && t.ramTotalMb > 0)) && (
-                  <div className="mt-3 space-y-1.5">
-                    {t.cpuPercent != null && (
-                      <div>
-                        <div className="flex justify-between text-[10px] uppercase tracking-wider text-cvx-faint">
-                          <span>CPU</span>
-                          <span className="mono-data">{t.cpuPercent.toFixed(0)}%</span>
-                        </div>
-                        <div className="resource-track mt-1">
-                          <div
-                            className="resource-fill bg-cvx-accent"
-                            style={{ width: `${Math.min(100, t.cpuPercent)}%` }}
-                          />
-                        </div>
-                      </div>
-                    )}
-                    {t.ramTotalMb != null && t.ramTotalMb > 0 && t.ramUsedMb != null && (
-                      <div>
-                        <div className="flex justify-between text-[10px] uppercase tracking-wider text-cvx-faint">
-                          <span>Memory</span>
-                          <span className="mono-data">
-                            {(t.ramUsedMb / 1024).toFixed(1)} / {(t.ramTotalMb / 1024).toFixed(0)} GB
-                          </span>
-                        </div>
-                        <div className="resource-track mt-1">
-                          <div
-                            className="resource-fill bg-cvx-accent"
-                            style={{ width: `${Math.min(100, (t.ramUsedMb / t.ramTotalMb) * 100)}%` }}
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </>
-            );
-            const cls =
-              "panel block p-4 transition-colors duration-200 hover:border-cvx-border-strong";
-            return t.href ? (
-              <Link key={t.key} to={t.href} className={cls}>{inner}</Link>
-            ) : (
-              <div key={t.key} className={cls.replace(" hover:", " ")}>{inner}</div>
-            );
-          })}
-          {computeTargets.length === 0 && (
-            <div className="panel p-6 text-center text-sm text-cvx-faint sm:col-span-2 xl:col-span-3">
-              No compute targets yet — enable local deployment or connect a node.
-            </div>
-          )}
+      {/* ── Compute control surface ── */}
+      <div className="panel p-4 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-cvx-text">Resource allocation</h2>
+          <span className="stat-label">across all nodes</span>
         </div>
-      </section>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <ResourceBar
+            label="CPU cores"
+            used={alloc?.cpu_allocated ?? 0}
+            total={alloc?.cpu_capacity ?? 0}
+          />
+          <ResourceBar
+            label="RAM"
+            used={Math.round(ramUsedGB)}
+            total={Math.round(ramTotalGB)}
+          />
+          <ResourceBar
+            label="Storage (GB)"
+            used={alloc?.storage_used_gb ?? 0}
+            total={alloc?.storage_total_gb ?? 0}
+          />
+        </div>
+      </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Card>
-          <CardHeader title="Nodes" action={<Link to="/app/admin/nodes" className="text-xs text-cvx-accent hover:underline">Manage</Link>} />
-          <div className="divide-y divide-cvx-border">
-            {data.nodes.items.length === 0 && (
-              <p className="px-4 py-8 text-center text-sm text-cvx-faint">No nodes registered yet.</p>
-            )}
-            {data.nodes.items.map((n) => (
-              <Link
-                key={n.id}
-                to={`/app/admin/nodes/${n.id}`}
-                className="flex items-center justify-between px-4 py-3 hover:bg-cvx-raised/50"
+      {/* ── Node list ── */}
+      {nodes && nodes.items.length > 0 && (
+        <div className="panel overflow-hidden">
+          <div className="flex items-center justify-between border-b border-cvx-border px-4 py-2.5">
+            <h2 className="text-sm font-semibold text-cvx-text">Nodes</h2>
+            <button
+              type="button"
+              onClick={() => navigate("/app/admin/nodes")}
+              className="text-xs text-cvx-accent hover:underline"
+            >
+              View all →
+            </button>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-[11px] uppercase tracking-wider text-cvx-faint">
+                <th className="px-4 py-2 font-medium">Node</th>
+                <th className="px-4 py-2 font-medium">Location</th>
+                <th className="hidden px-4 py-2 font-medium sm:table-cell">CPU</th>
+                <th className="hidden px-4 py-2 font-medium sm:table-cell">RAM</th>
+                <th className="px-4 py-2 font-medium">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-cvx-border">
+              {nodes.items.map((n) => {
+                const ramPctN = n.ram_total_mb && n.ram_used_mb != null
+                  ? Math.round((n.ram_used_mb / n.ram_total_mb) * 100)
+                  : null;
+                return (
+                  <tr key={n.id} className="hover:bg-cvx-raised/30 transition-colors">
+                    <td className="px-4 py-2.5">
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/app/admin/nodes/${n.id}`)}
+                        className="font-medium text-cvx-accent hover:underline"
+                      >
+                        {n.name}
+                      </button>
+                    </td>
+                    <td className="px-4 py-2.5 text-cvx-muted">{n.location}</td>
+                    <td className="hidden px-4 py-2.5 sm:table-cell">
+                      <div className="flex items-center gap-2">
+                        <div className="resource-track w-16">
+                          <div
+                            className="resource-fill bg-cvx-accent"
+                            style={{ width: `${n.cpu_percent ?? 0}%` }}
+                          />
+                        </div>
+                        <span className="mono-data text-[11px] text-cvx-muted">
+                          {n.cpu_percent != null ? `${Math.round(n.cpu_percent)}%` : "—"}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="hidden px-4 py-2.5 sm:table-cell">
+                      <div className="flex items-center gap-2">
+                        <div className="resource-track w-16">
+                          <div
+                            className="resource-fill bg-cvx-ok"
+                            style={{ width: `${ramPctN ?? 0}%` }}
+                          />
+                        </div>
+                        <span className="mono-data text-[11px] text-cvx-muted">
+                          {ramPctN != null ? `${ramPctN}%` : "—"}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <span className={`inline-flex items-center gap-1.5 text-xs ${
+                        n.status === "online" ? "text-cvx-ok" : "text-cvx-faint"
+                      }`}>
+                        <span className={`inline-block h-1.5 w-1.5 rounded-full ${
+                          n.status === "online" ? "bg-cvx-ok" : "bg-cvx-faint"
+                        }`} />
+                        {n.status}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        {/* ── Recent activity ── */}
+        {recentLogs.length > 0 && (
+          <div className="panel overflow-hidden">
+            <div className="flex items-center justify-between border-b border-cvx-border px-4 py-2.5">
+              <h2 className="text-sm font-semibold text-cvx-text">Recent activity</h2>
+              <button
+                type="button"
+                onClick={() => navigate("/app/admin/logs")}
+                className="text-xs text-cvx-accent hover:underline"
               >
-                <div>
-                  <p className="font-mono text-sm">{n.name}</p>
-                  <p className="text-xs text-cvx-faint">{n.location}</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="mono-data text-xs text-cvx-muted">
-                    {n.cpu_percent != null ? `${n.cpu_percent.toFixed(0)}% CPU` : ""}
-                  </span>
-                  <StatusBadge status={n.status} />
-                </div>
-              </Link>
-            ))}
+                View all →
+              </button>
+            </div>
+            <ul className="divide-y divide-cvx-border">
+              {recentLogs.map((log) => (
+                <li key={log.id} className="flex items-start gap-3 px-4 py-2.5">
+                  <span className={`mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full ${
+                    log.severity === "error" ? "bg-cvx-danger"
+                      : log.severity === "warning" ? "bg-cvx-warn"
+                        : log.severity === "info" ? "bg-cvx-accent"
+                          : "bg-cvx-faint"
+                  }`} />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs text-cvx-text">{log.message}</p>
+                    <p className="mt-0.5 text-[11px] text-cvx-faint">
+                      {log.source} · {fmtRelative(log.created_at)}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
           </div>
-        </Card>
+        )}
 
-        <Card>
-          <CardHeader title="Recent VPS" action={<Link to="/app/vps" className="text-xs text-cvx-accent hover:underline">View all</Link>} />
-          <div className="divide-y divide-cvx-border">
-            {(recentVps?.items.length ?? 0) === 0 && (
-              <p className="px-4 py-8 text-center text-sm text-cvx-faint">No VPS provisioned yet.</p>
-            )}
-            {recentVps?.items.map((v) => (
-              <Link
-                key={v.id}
-                to={`/app/vps/${v.id}`}
-                className="flex items-center justify-between px-4 py-3 hover:bg-cvx-raised/50"
-              >
-                <div>
-                  <p className="font-mono text-sm">{v.name} <ModeBadge mode={v.deployment_mode} className="ml-1" /></p>
-                  <p className="text-xs text-cvx-faint">{v.ipv4 ?? v.hostname}</p>
-                </div>
-                <StatusBadge status={v.status} />
-              </Link>
-            ))}
+        {/* ── Security alerts ── */}
+        {dash && dash.security_alerts.length > 0 && (
+          <div className="panel overflow-hidden">
+            <div className="border-b border-cvx-border px-4 py-2.5">
+              <h2 className="text-sm font-semibold text-cvx-text">Security alerts</h2>
+            </div>
+            <ul className="divide-y divide-cvx-border">
+              {dash.security_alerts.map((alert) => (
+                <li key={alert.id} className="flex items-start gap-3 px-4 py-2.5">
+                  <SeverityDot severity={alert.severity} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs text-cvx-text">{alert.message}</p>
+                    <p className="mt-0.5 text-[11px] text-cvx-faint">
+                      {alert.category} · {fmtRelative(alert.created_at)}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
           </div>
-        </Card>
-
-        <Card className="xl:col-span-2">
-          <CardHeader title="Security alerts" />
-          <div className="divide-y divide-cvx-border">
-            {data.security_alerts.length === 0 && (
-              <p className="px-4 py-8 text-center text-sm text-cvx-faint">No recent alerts.</p>
-            )}
-            {data.security_alerts.map((a) => (
-              <div key={a.id} className="flex items-start justify-between gap-4 px-4 py-3">
-                <div className="min-w-0">
-                  <p className="truncate text-sm text-cvx-text">{a.message}</p>
-                  <p className="text-xs text-cvx-faint">{a.category}</p>
-                </div>
-                <div className="shrink-0 text-right">
-                  <StatusBadge status={a.severity} />
-                  <p className="mt-1 text-[11px] text-cvx-faint">{fmtRelative(a.created_at)}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
+        )}
       </div>
     </div>
   );

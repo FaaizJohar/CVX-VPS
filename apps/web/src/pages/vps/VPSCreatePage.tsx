@@ -7,6 +7,7 @@ import type { Image, LocalStatus, NodeInfo } from "@/types";
 import { Button } from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/Input";
 import { PageLoader } from "@/components/ui/Loading";
+import { ResourceSlider } from "@/components/ui/ResourceSlider";
 
 const STEPS = [
   "Deployment",
@@ -86,7 +87,6 @@ export default function VPSCreatePage() {
   const selectedImage = (images ?? []).find((i) => i.id === draft.image_id);
   const localAvailable = localStatus?.available === true;
 
-  // Auto-select the only viable deployment target when there is exactly one.
   useEffect(() => {
     if (draft.mode !== "") return;
     if (agentNodes.length === 0 && localAvailable) {
@@ -125,8 +125,6 @@ export default function VPSCreatePage() {
     onSuccess: (job) => {
       void qc.invalidateQueries({ queryKey: ["vps"] });
       void qc.invalidateQueries({ queryKey: ["nodes"] });
-      // Provisioning now runs as a background job; the workspace shows live
-      // progress while it completes.
       navigate(`/app/vps/${job.vps_id}`);
     },
     onError: (e) => setError(e instanceof ApiError ? e.message : "Creation failed."),
@@ -161,8 +159,7 @@ export default function VPSCreatePage() {
   return (
     <form onSubmit={onSubmit} className="mx-auto max-w-2xl space-y-6">
       <header>
-        <h1 className="text-xl font-semibold">Create VPS</h1>
-        {/* Step indicator */}
+        <h1 className="font-display text-xl font-semibold tracking-tight">Create VPS</h1>
         <ol aria-label="Progress" className="mt-4 flex gap-1">
           {STEPS.map((label, i) => (
             <li key={label} className="flex-1">
@@ -199,7 +196,6 @@ export default function VPSCreatePage() {
               </p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
-              {/* Deploy on Node */}
               <button
                 type="button"
                 disabled={agentNodes.length === 0}
@@ -220,7 +216,12 @@ export default function VPSCreatePage() {
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <span aria-hidden className="text-lg">🌐</span>
+                  <span aria-hidden className="text-lg">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="4" y="4" width="16" height="6" rx="1" /><rect x="4" y="14" width="16" height="6" rx="1" />
+                      <circle cx="8" cy="7" r="1" fill="currentColor" /><circle cx="8" cy="17" r="1" fill="currentColor" />
+                    </svg>
+                  </span>
                   <span className="rounded border border-cvx-border bg-cvx-raised px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-cvx-muted">
                     {agentNodes.length} online
                   </span>
@@ -237,7 +238,6 @@ export default function VPSCreatePage() {
                 </p>
               </button>
 
-              {/* Deploy Locally */}
               <button
                 type="button"
                 disabled={!localAvailable}
@@ -252,7 +252,11 @@ export default function VPSCreatePage() {
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <span aria-hidden className="text-lg">🖥️</span>
+                  <span aria-hidden className="text-lg">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="2" y="3" width="20" height="14" rx="2" /><path d="M8 21h8M12 18v3" />
+                    </svg>
+                  </span>
                   {localAvailable && (
                     <span className="rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-emerald-400">
                       Ready
@@ -307,17 +311,30 @@ export default function VPSCreatePage() {
                   type="button"
                   onClick={() => setDraft({ ...draft, image_id: img.id })}
                   aria-pressed={draft.image_id === img.id}
-                  className={`rounded-md border p-3 text-left transition-colors ${
+                  className={`rounded-lg border p-3.5 text-left transition-all duration-150 ${
                     draft.image_id === img.id
-                      ? "border-cvx-accent bg-cvx-accent/10"
-                      : "border-cvx-border hover:border-cvx-border-strong"
+                      ? "border-cvx-accent bg-cvx-accent/10 ring-1 ring-cvx-accent/40"
+                      : "border-cvx-border hover:border-cvx-border-strong hover:bg-cvx-raised/40"
                   }`}
                 >
-                  <p className="text-sm font-medium">{img.display_name}</p>
-                  <p className="mt-0.5 text-xs text-cvx-faint">
-                    {img.os_family} · {img.architecture}
-                    {img.size_mb ? ` · ${img.size_mb} MB` : ""}
-                  </p>
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-cvx-text">{img.display_name}</p>
+                      <p className="mt-0.5 text-[11px] text-cvx-faint">
+                        {img.os_family} · {img.architecture}
+                      </p>
+                    </div>
+                    {draft.image_id === img.id && (
+                      <span className="shrink-0 text-cvx-accent">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M20 6L9 17l-5-5" />
+                        </svg>
+                      </span>
+                    )}
+                  </div>
+                  {img.size_mb ? (
+                    <p className="mt-1.5 text-[10px] text-cvx-faint">{img.size_mb} MB</p>
+                  ) : null}
                 </button>
               ))}
               {images?.length === 0 && (
@@ -330,27 +347,55 @@ export default function VPSCreatePage() {
         )}
 
         {step === 2 && (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-            <Field label="CPU cores">
-              <Input type="number" min={1} max={64} value={draft.cpu_limit}
-                onChange={(e) => setDraft({ ...draft, cpu_limit: Number(e.target.value) })} />
-            </Field>
-            <Field label="RAM (MB)">
-              <Input type="number" min={128} step={128} value={draft.ram_mb}
-                onChange={(e) => setDraft({ ...draft, ram_mb: Number(e.target.value) })} />
-            </Field>
-            <Field label="Swap (MB)">
-              <Input type="number" min={0} step={128} value={draft.swap_mb}
-                onChange={(e) => setDraft({ ...draft, swap_mb: Number(e.target.value) })} />
-            </Field>
-            <Field label="Disk (GB)">
-              <Input type="number" min={5} value={draft.disk_gb}
-                onChange={(e) => setDraft({ ...draft, disk_gb: Number(e.target.value) })} />
-            </Field>
-            <Field label="Process limit">
-              <Input type="number" min={32} step={32} value={draft.process_limit}
-                onChange={(e) => setDraft({ ...draft, process_limit: Number(e.target.value) })} />
-            </Field>
+          <div className="space-y-6">
+            <ResourceSlider
+              label="CPU cores"
+              unit="vCPU"
+              value={draft.cpu_limit}
+              min={1}
+              max={32}
+              onChange={(v) => setDraft({ ...draft, cpu_limit: v })}
+              presets={[1, 2, 4, 8, 16]}
+            />
+            <ResourceSlider
+              label="Memory"
+              unit="MB"
+              value={draft.ram_mb}
+              min={256}
+              max={65536}
+              step={256}
+              onChange={(v) => setDraft({ ...draft, ram_mb: v })}
+              presets={[512, 1024, 2048, 4096, 8192, 16384]}
+            />
+            <ResourceSlider
+              label="Swap"
+              unit="MB"
+              value={draft.swap_mb}
+              min={0}
+              max={16384}
+              step={256}
+              onChange={(v) => setDraft({ ...draft, swap_mb: v })}
+              presets={[0, 512, 1024, 2048, 4096]}
+            />
+            <ResourceSlider
+              label="Disk"
+              unit="GB"
+              value={draft.disk_gb}
+              min={5}
+              max={500}
+              onChange={(v) => setDraft({ ...draft, disk_gb: v })}
+              presets={[10, 25, 50, 100, 200]}
+            />
+            <ResourceSlider
+              label="Process limit"
+              unit=""
+              value={draft.process_limit}
+              min={32}
+              max={4096}
+              step={32}
+              onChange={(v) => setDraft({ ...draft, process_limit: v })}
+              presets={[64, 128, 256, 512, 1024]}
+            />
           </div>
         )}
 
@@ -382,7 +427,14 @@ export default function VPSCreatePage() {
         )}
 
         {step === 4 && (
-          <div className="space-y-4">
+          <div className="space-y-5">
+            <div className="rounded-lg border border-cvx-accent/20 bg-cvx-accent/5 p-3.5">
+              <p className="text-xs font-medium text-cvx-accent">Recommended: Use SSH keys</p>
+              <p className="mt-1 text-[11px] leading-relaxed text-cvx-muted">
+                SSH keys are more secure than passwords and are set up once.
+                You can paste your public key below.
+              </p>
+            </div>
             <Field label="SSH public keys" hint="One OpenSSH key per line (ssh-ed25519, ssh-rsa…)">
               <textarea
                 className="input-base min-h-[120px] font-mono text-xs"
@@ -422,40 +474,42 @@ export default function VPSCreatePage() {
         )}
 
         {step === 5 && (
-          <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
-            {[
-              [
-                "Deployment",
-                draft.mode === "local"
-                  ? "This machine (local LXD)"
-                  : selectedNode
-                    ? `${selectedNode.name} (${selectedNode.location})`
-                    : "—",
-              ],
-              ["Operating system", selectedImage?.display_name ?? "—"],
-              ["Name", draft.name],
-              ["Hostname", draft.hostname || `${draft.name}.local`],
-              ["CPU", `${draft.cpu_limit} vCPU`],
-              ["RAM", `${(draft.ram_mb / 1024).toFixed(1)} GB`],
-              ["Swap", `${(draft.swap_mb / 1024).toFixed(1)} GB`],
-              ["Disk", `${draft.disk_gb} GB`],
-              ["Process limit", String(draft.process_limit)],
-              ["IPv4", draft.ipv4 || "DHCP"],
-              ["IPv6", draft.ipv6 || "—"],
-              [
-                "Access",
-                `${
-                  draft.ssh_keys.trim() ? "SSH keys" : ""
-                }${draft.password_auth_enabled ? `${draft.ssh_keys.trim() ? " + " : ""}password` : ""}` ||
-                  "—",
-              ],
-            ].map(([k, v]) => (
-              <div key={k}>
-                <dt className="stat-label">{k}</dt>
-                <dd className="mt-0.5 break-all">{v}</dd>
-              </div>
-            ))}
-          </dl>
+          <div className="space-y-4">
+            <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+              {[
+                [
+                  "Deployment",
+                  draft.mode === "local"
+                    ? "This machine (local LXD)"
+                    : selectedNode
+                      ? `${selectedNode.name} (${selectedNode.location})`
+                      : "—",
+                ],
+                ["OS", selectedImage?.display_name ?? "—"],
+                ["Name", draft.name],
+                ["Hostname", draft.hostname || `${draft.name}.local`],
+                ["CPU", `${draft.cpu_limit} vCPU`],
+                ["RAM", `${(draft.ram_mb / 1024).toFixed(1)} GB`],
+                ["Swap", `${(draft.swap_mb / 1024).toFixed(1)} GB`],
+                ["Disk", `${draft.disk_gb} GB`],
+                ["Process limit", String(draft.process_limit)],
+                ["IPv4", draft.ipv4 || "DHCP"],
+                ["IPv6", draft.ipv6 || "—"],
+                [
+                  "Access",
+                  `${
+                    draft.ssh_keys.trim() ? "SSH keys" : ""
+                  }${draft.password_auth_enabled ? `${draft.ssh_keys.trim() ? " + " : ""}password` : ""}` ||
+                    "—",
+                ],
+              ].map(([k, v]) => (
+                <div key={k}>
+                  <dt className="stat-label">{k}</dt>
+                  <dd className="mt-0.5 break-all">{v}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
         )}
       </div>
 

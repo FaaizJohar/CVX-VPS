@@ -6,6 +6,7 @@ import type { LocalStatus, NodeInfo } from "@/types";
 import { Button } from "@/components/ui/Button";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/Loading";
+import { ErrorState } from "@/components/ui/ErrorState";
 import { Input } from "@/components/ui/Input";
 import { Field } from "@/components/ui/Input";
 import { ModeBadge } from "@/components/ui/ModeBadge";
@@ -20,6 +21,30 @@ interface CreateResult {
 
 const LOCATION_PRESETS = ["Mumbai, IN", "Frankfurt, DE", "Singapore, SG", "Ashburn, US"];
 
+function CheckIcon({ done, active }: { done: boolean; active: boolean }) {
+  if (done) {
+    return (
+      <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-cvx-ok/15 text-cvx-ok">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M20 6L9 17l-5-5" />
+        </svg>
+      </span>
+    );
+  }
+  if (active) {
+    return (
+      <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-cvx-accent/15">
+        <span className="h-2 w-2 animate-pulse rounded-full bg-cvx-accent" />
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-cvx-border-strong">
+      <span className="h-1.5 w-1.5 rounded-full bg-cvx-faint" />
+    </span>
+  );
+}
+
 export default function AdminNodesPage() {
   const qc = useQueryClient();
   const [showAdd, setShowAdd] = useState(false);
@@ -27,10 +52,8 @@ export default function AdminNodesPage() {
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", location: "", description: "" });
 
-  // While a node is awaiting enrollment, poll faster so the wizard flips to
-  // "detected" as soon as the agent checks in.
   const pendingEnrollment = result !== null;
-  const { data: nodes, isLoading } = useQuery({
+  const { data: nodes, isLoading, error: nodesError, refetch } = useQuery({
     queryKey: ["nodes"],
     queryFn: () => api.get<NodeInfo[]>("/api/v1/nodes"),
     refetchInterval: pendingEnrollment ? 3_000 : 15_000,
@@ -75,11 +98,15 @@ export default function AdminNodesPage() {
     setError(null);
   }
 
+  if (nodesError) {
+    return <ErrorState message="Failed to load nodes." onRetry={() => void refetch()} />;
+  }
+
   return (
-    <div className="space-y-4">
+    <div className="animate-fade-up space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold">Nodes</h1>
+          <h1 className="font-display text-lg font-semibold tracking-tight">Nodes</h1>
           <p className="text-xs text-cvx-faint">Compute nodes running LXD and the CVX agent.</p>
         </div>
         <Button variant="primary" onClick={() => { setShowAdd(true); setResult(null); }}>
@@ -154,10 +181,10 @@ export default function AdminNodesPage() {
                 action={<Button size="sm" variant="ghost" onClick={closeWizard}>Close</Button>}
               />
               <div className="space-y-4 p-4">
-                <p className="flex items-center gap-2 text-sm text-emerald-400">
-                  <span aria-hidden className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
+                <div className="flex items-center gap-2.5 text-sm text-emerald-400">
+                  <CheckIcon done active={false} />
                   Agent connected — system detected and enrolled.
-                </p>
+                </div>
                 <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-3">
                   {([
                     ["Name", enrolledNode.name],
@@ -193,20 +220,38 @@ export default function AdminNodesPage() {
                 action={<Button size="sm" variant="ghost" onClick={closeWizard}>Cancel</Button>}
               />
               <div className="space-y-4 p-4">
-                <ol className="space-y-1 text-xs text-cvx-muted" aria-label="Enrollment progress">
-                  <li className="flex items-center gap-2">
-                    <span aria-hidden className="text-emerald-400">✓</span> Enrollment token generated
+                {/* Honest 3-step checklist */}
+                <ol className="space-y-3" aria-label="Enrollment progress">
+                  <li className="flex items-start gap-3">
+                    <CheckIcon done active={false} />
+                    <div>
+                      <p className="text-xs font-medium text-cvx-text">Enrollment token generated</p>
+                      <p className="mt-0.5 text-[11px] text-cvx-faint">
+                        Token for <span className="font-mono">{result.node.name}</span> is ready.
+                      </p>
+                    </div>
                   </li>
-                  <li className="flex items-center gap-2">
-                    <span
-                      aria-hidden
-                      className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-cvx-accent"
-                    />
-                    Run the command below on your server — CVX will detect it automatically
+                  <li className="flex items-start gap-3">
+                    <CheckIcon done={false} active />
+                    <div>
+                      <p className="text-xs font-medium text-cvx-text">
+                        Run the command below on your server
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-cvx-faint">
+                        CVX will detect the agent automatically when it connects.
+                      </p>
+                    </div>
                   </li>
-                  <li className="flex items-center gap-2 text-cvx-faint">
-                    <span aria-hidden className="inline-block h-1.5 w-1.5 rounded-full border border-cvx-border-strong" />
-                    Node appears here with its detected hardware
+                  <li className="flex items-start gap-3">
+                    <CheckIcon done={false} active={false} />
+                    <div>
+                      <p className="text-xs font-medium text-cvx-text">
+                        Node appears here with detected hardware
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-cvx-faint">
+                        CPU, memory, storage, LXD version, and public IP are collected automatically.
+                      </p>
+                    </div>
                   </li>
                 </ol>
                 <CommandBlock
@@ -330,15 +375,15 @@ export default function AdminNodesPage() {
               <tr className="border-b border-cvx-border text-left text-[11px] uppercase tracking-wider text-cvx-faint">
                 <th className="px-4 py-2.5 font-medium">Node</th>
                 <th className="px-4 py-2.5 font-medium">Location</th>
-                <th className="px-4 py-2.5 font-medium">Address</th>
-                <th className="px-4 py-2.5 font-medium">CPU / RAM</th>
-                <th className="px-4 py-2.5 font-medium">Heartbeat</th>
+                <th className="hidden px-4 py-2.5 font-medium sm:table-cell">Address</th>
+                <th className="hidden px-4 py-2.5 font-medium md:table-cell">CPU / RAM</th>
+                <th className="hidden px-4 py-2.5 font-medium lg:table-cell">Heartbeat</th>
                 <th className="px-4 py-2.5 font-medium">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-cvx-border">
               {nodes.map((n) => (
-                <tr key={n.id} className="transition-colors duration-150 hover:bg-cvx-raised/40">
+                <tr key={n.id} className="group transition-colors duration-150 hover:bg-cvx-raised/40">
                   <td className="px-4 py-2.5">
                     <div className="flex items-center gap-2">
                       <Link to={`/app/admin/nodes/${n.id}`} className="font-mono text-cvx-accent hover:underline">
@@ -348,16 +393,16 @@ export default function AdminNodesPage() {
                     </div>
                   </td>
                   <td className="px-4 py-2.5 text-cvx-muted">{n.location}</td>
-                  <td className="mono-data px-4 py-2.5">
+                  <td className="mono-data hidden px-4 py-2.5 sm:table-cell">
                     {n.status === "pending" && n.public_ip === "pending-detection"
                       ? <span className="text-cvx-faint">detecting…</span>
                       : n.public_ip}
                   </td>
-                  <td className="mono-data px-4 py-2.5 text-cvx-muted">
+                  <td className="mono-data hidden px-4 py-2.5 text-cvx-muted md:table-cell">
                     {n.cpu_cores != null ? `${n.cpu_cores} cores` : "?"} ·{" "}
                     {n.ram_total_mb != null ? `${(n.ram_total_mb / 1024).toFixed(0)} GB` : "?"}
                   </td>
-                  <td className="px-4 py-2.5 text-xs text-cvx-faint">{fmtRelative(n.last_heartbeat_at)}</td>
+                  <td className="hidden px-4 py-2.5 text-xs text-cvx-faint lg:table-cell">{fmtRelative(n.last_heartbeat_at)}</td>
                   <td className="px-4 py-2.5"><StatusBadge status={n.status} /></td>
                 </tr>
               ))}

@@ -30,6 +30,13 @@ export default {
           "Segoe UI",
           "sans-serif",
         ],
+        display: [
+          "Space Grotesk",
+          "Inter",
+          "-apple-system",
+          "BlinkMacSystemFont",
+          "sans-serif",
+        ],
         mono: [
           "JetBrains Mono",
           "SF Mono",
@@ -37,6 +44,15 @@ export default {
           "Consolas",
           "monospace",
         ],
+      },
+      spacing: {
+        "4.5": "1.125rem",
+        "13": "3.25rem",
+        "15": "3.75rem",
+        "18": "4.5rem",
+      },
+      transitionProperty: {
+        "sidebar": "width, padding, margin",
       },
     },
   },
