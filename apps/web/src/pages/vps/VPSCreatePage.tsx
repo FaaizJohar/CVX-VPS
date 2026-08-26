@@ -234,7 +234,8 @@ export default function VPSCreatePage() {
                   <span>Remote</span><span>·</span><span>Node agent</span><span>·</span><span>Multi-location</span>
                 </p>
                 <p className={`mt-auto pt-3 text-xs font-medium ${draft.mode === "node" ? "text-cvx-accent" : "text-cvx-muted group-hover:text-cvx-text"}`}>
-                  Choose Node →
+                  Choose Node
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
                 </p>
               </button>
 
@@ -277,7 +278,8 @@ export default function VPSCreatePage() {
                   )}
                 </p>
                 <p className={`mt-auto pt-3 text-xs font-medium ${draft.mode === "local" ? "text-violet-400" : "text-cvx-muted group-hover:text-cvx-text"}`}>
-                  Use This Machine →
+                  Use This Machine
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
                 </p>
               </button>
             </div>

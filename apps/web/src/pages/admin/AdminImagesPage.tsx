@@ -6,11 +6,13 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Field } from "@/components/ui/Input";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 
 export default function AdminImagesPage() {
   const qc = useQueryClient();
   const [showAdd, setShowAdd] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmImg, setConfirmImg] = useState<Image | null>(null);
   const [form, setForm] = useState({
     alias: "",
     display_name: "",
@@ -56,10 +58,10 @@ export default function AdminImagesPage() {
   });
 
   return (
-    <div className="space-y-4">
+    <div className="animate-fade-up space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold">Images</h1>
+          <h1 className="font-display text-lg font-semibold tracking-tight">Images</h1>
           <p className="text-xs text-cvx-faint">OS templates available when creating VPS.</p>
         </div>
         <Button variant="primary" onClick={() => setShowAdd(!showAdd)}>
@@ -147,9 +149,7 @@ export default function AdminImagesPage() {
                       <Button size="sm" variant="ghost" onClick={() => toggle.mutate(img)} disabled={toggle.isPending}>
                         {img.enabled ? "Disable" : "Enable"}
                       </Button>
-                      <Button size="sm" variant="danger" onClick={() => {
-                        if (confirm(`Delete image "${img.display_name}"?`)) remove.mutate(img);
-                      }}>
+                      <Button size="sm" variant="danger" onClick={() => setConfirmImg(img)}>
                         Delete
                       </Button>
                     </div>
@@ -160,6 +160,17 @@ export default function AdminImagesPage() {
           </table>
         </Card>
       )}
+
+      <ConfirmDialog
+        open={!!confirmImg}
+        title={`Delete "${confirmImg?.display_name}"?`}
+        message="This OS image will be removed from the available templates. This cannot be undone."
+        confirmLabel="Delete"
+        danger
+        busy={remove.isPending}
+        onConfirm={() => { if (confirmImg) remove.mutate(confirmImg); setConfirmImg(null); }}
+        onClose={() => setConfirmImg(null)}
+      />
     </div>
   );
 }

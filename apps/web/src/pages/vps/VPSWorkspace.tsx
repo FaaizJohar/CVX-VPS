@@ -1,12 +1,15 @@
 import { lazy, Suspense, useEffect } from "react";
 import { Link, Navigate, Route, Routes, useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api, ApiError } from "@/lib/api";
 import type { VPS } from "@/types";
 import { PageLoader, Spinner } from "@/components/ui/Loading";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ModeBadge } from "@/components/ui/ModeBadge";
 import { JobProgress } from "@/components/vps/JobProgress";
+import { DropdownMenu } from "@/components/ui/DropdownMenu";
+import type { DropdownAction } from "@/components/ui/DropdownMenu";
+import { useToast } from "@/components/ui/Toast";
 
 const CommandTab = lazy(() => import("./tabs/CommandTab"));
 const TerminalTab = lazy(() => import("./tabs/TerminalTab"));
@@ -36,17 +39,28 @@ const TABS = [
 
 export default function VPSWorkspace() {
   const { id, "*": active = "command" } = useParams();
-
+  const qc = useQueryClient();
+  const toast = useToast();
   const unlocked = sessionStorage.getItem(`cvx-unlock-${id}`) === "1";
 
   const { data: vps } = useQuery({
     queryKey: ["vps", id],
     queryFn: () => api.get<VPS>(`/api/v1/vps/${id}`),
     enabled: unlocked,
-    // Poll faster while the workspace shows a live provisioning job.
     refetchInterval: (query) => {
       const status = query.state.data?.status;
       return status === "creating" || status === "provisioning" ? 3_000 : 15_000;
+    },
+  });
+
+  const lifecycle = useMutation({
+    mutationFn: (action: string) => api.post(`/api/v1/vps/${id}/${action}`),
+    onSuccess: (_data, action) => {
+      void qc.invalidateQueries({ queryKey: ["vps", id] });
+      toast.success(`VPS ${action} succeeded.`);
+    },
+    onError: (err) => {
+      toast.error(err instanceof ApiError ? err.message : "Action failed.");
     },
   });
 
@@ -59,12 +73,45 @@ export default function VPSWorkspace() {
 
   if (!unlocked) return <Navigate to={`/app/vps/${id}/unlock`} replace />;
 
+  const isRunning = vps?.status === "running";
+  const isStopped = vps?.status === "stopped";
+  const canLifecycle = (isRunning || isStopped) && !lifecycle.isPending;
+
+  const actions: DropdownAction[] = [
+    {
+      label: "Open terminal",
+      icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="3" width="20" height="14" rx="2" /><path d="M8 21h8M12 18v3" /></svg>,
+      onClick: () => {
+        /* Navigate to terminal tab — handled by caller */
+      },
+    },
+    { separator: true, label: "" },
+    {
+      label: "Restart",
+      icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M1 4v6h6M23 20v-6h-6" /><path d="M20.49 9A9 9 0 005.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 013.51 15" /></svg>,
+      disabled: !canLifecycle,
+      onClick: () => lifecycle.mutate("restart"),
+    },
+    {
+      label: isRunning ? "Stop" : "Start",
+      icon: isRunning
+        ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></svg>
+        : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><polygon points="5 3 19 12 5 21 5 3" /></svg>,
+      disabled: !canLifecycle,
+      onClick: () => lifecycle.mutate(isRunning ? "stop" : "start"),
+    },
+  ];
+
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="animate-fade-up flex h-full min-h-0 flex-col">
       {/* Header */}
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-cvx-border pb-3">
         <div className="flex min-w-0 items-center gap-3">
-          <Link to="/app/vps" className="text-cvx-faint hover:text-cvx-muted">←</Link>
+          <Link to="/app/vps" className="text-cvx-faint hover:text-cvx-muted" aria-label="Back to VPS list">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M19 12H5M12 19l-7-7 7-7" />
+            </svg>
+          </Link>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h1 className="truncate font-mono text-lg font-semibold">{vps?.name ?? "…"}</h1>
@@ -75,6 +122,20 @@ export default function VPSWorkspace() {
             </p>
           </div>
         </div>
+        {vps && (
+          <DropdownMenu
+            trigger={
+              <button type="button" className="icon-btn" aria-label="VPS actions">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <circle cx="12" cy="5" r="1.5" fill="currentColor" />
+                  <circle cx="12" cy="12" r="1.5" fill="currentColor" />
+                  <circle cx="12" cy="19" r="1.5" fill="currentColor" />
+                </svg>
+              </button>
+            }
+            actions={actions}
+          />
+        )}
       </header>
 
       {vps && ["creating", "provisioning"].includes(vps.status) && id && (

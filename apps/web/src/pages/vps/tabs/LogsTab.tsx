@@ -95,8 +95,14 @@ export default function LogsTab({ vps }: { vps: VPS }) {
           <div className="flex items-center justify-between border-t border-cvx-border px-4 py-2 text-xs text-cvx-faint">
             <span>Page {data.page} of {totalPages}</span>
             <div className="flex gap-3">
-              <button disabled={page <= 1} onClick={() => setPage(page - 1)} className="disabled:opacity-30 hover:text-cvx-text">← Prev</button>
-              <button disabled={page >= totalPages} onClick={() => setPage(page + 1)} className="disabled:opacity-30 hover:text-cvx-text">Next →</button>
+              <button disabled={page <= 1} onClick={() => setPage(page - 1)} className="flex items-center gap-1 disabled:opacity-30 hover:text-cvx-text">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                Prev
+              </button>
+              <button disabled={page >= totalPages} onClick={() => setPage(page + 1)} className="flex items-center gap-1 disabled:opacity-30 hover:text-cvx-text">
+                Next
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+              </button>
             </div>
           </div>
         </>

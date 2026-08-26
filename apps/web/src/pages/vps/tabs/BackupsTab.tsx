@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { EmptyState, Spinner } from "@/components/ui/Loading";
 import { Input } from "@/components/ui/Input";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { fmtBytes, fmtDate } from "@/lib/format";
 
@@ -13,6 +14,7 @@ export default function BackupsTab({ vps }: { vps: VPS }) {
   const qc = useQueryClient();
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ type: "restore" | "delete"; id: string; name: string } | null>(null);
 
   const { data: backups, isLoading } = useQuery({
     queryKey: ["vps", vps.id, "backups"],
@@ -105,10 +107,7 @@ export default function BackupsTab({ vps }: { vps: VPS }) {
                   <Button
                     size="sm"
                     disabled={op.isPending || b.status !== "completed"}
-                    onClick={() => {
-                      if (confirm(`Restore backup "${b.name}"? Current disk state will be replaced.`))
-                        op.mutate({ id: b.id, action: "restore" });
-                    }}
+                    onClick={() => setConfirmAction({ type: "restore", id: b.id, name: b.name })}
                   >
                     Restore
                   </Button>
@@ -116,10 +115,7 @@ export default function BackupsTab({ vps }: { vps: VPS }) {
                     size="sm"
                     variant="danger"
                     disabled={op.isPending}
-                    onClick={() => {
-                      if (confirm(`Delete backup "${b.name}"? This cannot be undone.`))
-                        op.mutate({ id: b.id, action: "delete" });
-                    }}
+                    onClick={() => setConfirmAction({ type: "delete", id: b.id, name: b.name })}
                   >
                     Delete
                   </Button>
@@ -129,6 +125,26 @@ export default function BackupsTab({ vps }: { vps: VPS }) {
           </ul>
         )}
       </Card>
+
+      <ConfirmDialog
+        open={confirmAction?.type === "restore"}
+        title={`Restore backup "${confirmAction?.name}"?`}
+        message="Current disk state will be replaced with the backup contents. This operation may take several minutes."
+        confirmLabel="Restore"
+        busy={op.isPending}
+        onConfirm={() => { if (confirmAction) op.mutate({ id: confirmAction.id, action: "restore" }); setConfirmAction(null); }}
+        onClose={() => setConfirmAction(null)}
+      />
+      <ConfirmDialog
+        open={confirmAction?.type === "delete"}
+        title={`Delete backup "${confirmAction?.name}"?`}
+        message="This backup will be permanently removed. This cannot be undone."
+        confirmLabel="Delete"
+        danger
+        busy={op.isPending}
+        onConfirm={() => { if (confirmAction) op.mutate({ id: confirmAction.id, action: "delete" }); setConfirmAction(null); }}
+        onClose={() => setConfirmAction(null)}
+      />
     </div>
   );
 }

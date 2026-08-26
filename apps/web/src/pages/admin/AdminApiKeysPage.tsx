@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/Loading";
 import { Input } from "@/components/ui/Input";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { fmtDate } from "@/lib/format";
 
@@ -24,6 +25,7 @@ export default function AdminApiKeysPage() {
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<string | null>(null);
+  const [confirmRevoke, setConfirmRevoke] = useState<{ id: string; name: string } | null>(null);
 
   const { data: keys, isLoading } = useQuery({
     queryKey: ["apikeys"],
@@ -48,9 +50,9 @@ export default function AdminApiKeysPage() {
   });
 
   return (
-    <div className="space-y-4">
+    <div className="animate-fade-up space-y-4">
       <div>
-        <h1 className="text-lg font-semibold">API keys</h1>
+        <h1 className="font-display text-lg font-semibold tracking-tight">API keys</h1>
         <p className="text-xs text-cvx-faint">Programmatic access with your account's permissions.</p>
       </div>
 
@@ -118,10 +120,7 @@ export default function AdminApiKeysPage() {
                   <td className="px-4 py-2.5"><StatusBadge status={k.status} /></td>
                   <td className="px-4 py-2.5 text-right">
                     {k.status === "active" && (
-                      <Button size="sm" variant="danger" onClick={() => {
-                        if (confirm(`Revoke API key "${k.name}"? Clients using it will fail immediately.`))
-                          revoke.mutate(k.id);
-                      }}>
+                      <Button size="sm" variant="danger" onClick={() => setConfirmRevoke({ id: k.id, name: k.name })}>
                         Revoke
                       </Button>
                     )}
@@ -132,6 +131,17 @@ export default function AdminApiKeysPage() {
           </table>
         </Card>
       )}
+
+      <ConfirmDialog
+        open={!!confirmRevoke}
+        title={`Revoke "${confirmRevoke?.name}"?`}
+        message="Clients using this key will fail immediately. This cannot be undone."
+        confirmLabel="Revoke"
+        danger
+        busy={revoke.isPending}
+        onConfirm={() => { if (confirmRevoke) revoke.mutate(confirmRevoke.id); setConfirmRevoke(null); }}
+        onClose={() => setConfirmRevoke(null)}
+      />
     </div>
   );
 }

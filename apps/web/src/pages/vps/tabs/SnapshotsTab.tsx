@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/Loading";
 import { Input } from "@/components/ui/Input";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { fmtBytes, fmtDate } from "@/lib/format";
 
 export default function SnapshotsTab({ vps }: { vps: VPS }) {
@@ -13,6 +14,9 @@ export default function SnapshotsTab({ vps }: { vps: VPS }) {
   const [name, setName] = useState("");
   const [stateful, setStateful] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ type: "restore" | "delete"; snap: string } | null>(null);
+  const [renameTarget, setRenameTarget] = useState<{ snap: string; currentName: string } | null>(null);
+  const [renameValue, setRenameValue] = useState("");
 
   const { data: snapshots, isLoading } = useQuery({
     queryKey: ["vps", vps.id, "snapshots"],
@@ -115,10 +119,7 @@ export default function SnapshotsTab({ vps }: { vps: VPS }) {
                   <Button
                     size="sm"
                     disabled={op.isPending}
-                    onClick={() => {
-                      if (confirm(`Restore "${s.name}"? Current disk state will be lost.`))
-                        op.mutate({ snap: s.name, action: "restore" });
-                    }}
+                    onClick={() => setConfirmAction({ type: "restore", snap: s.name })}
                   >
                     Restore
                   </Button>
@@ -126,10 +127,7 @@ export default function SnapshotsTab({ vps }: { vps: VPS }) {
                     size="sm"
                     variant="ghost"
                     disabled={op.isPending}
-                    onClick={() => {
-                      const nn = prompt("New name:", s.name);
-                      if (nn && nn !== s.name) op.mutate({ snap: s.name, action: "rename", newName: nn });
-                    }}
+                    onClick={() => { setRenameTarget({ snap: s.name, currentName: s.name }); setRenameValue(s.name); }}
                   >
                     Rename
                   </Button>
@@ -137,10 +135,7 @@ export default function SnapshotsTab({ vps }: { vps: VPS }) {
                     size="sm"
                     variant="danger"
                     disabled={op.isPending}
-                    onClick={() => {
-                      if (confirm(`Delete snapshot "${s.name}"? This cannot be undone.`))
-                        op.mutate({ snap: s.name, action: "delete" });
-                    }}
+                    onClick={() => setConfirmAction({ type: "delete", snap: s.name })}
                   >
                     Delete
                   </Button>
@@ -150,6 +145,63 @@ export default function SnapshotsTab({ vps }: { vps: VPS }) {
           </ul>
         )}
       </Card>
+
+      <ConfirmDialog
+        open={confirmAction?.type === "restore"}
+        title={`Restore "${confirmAction?.snap}"?`}
+        message="Current disk state will be lost. The snapshot will be restored to replace the running instance."
+        confirmLabel="Restore"
+        busy={op.isPending}
+        onConfirm={() => { if (confirmAction) op.mutate({ snap: confirmAction.snap, action: "restore" }); setConfirmAction(null); }}
+        onClose={() => setConfirmAction(null)}
+      />
+      <ConfirmDialog
+        open={confirmAction?.type === "delete"}
+        title={`Delete "${confirmAction?.snap}"?`}
+        message="This snapshot will be permanently removed. This cannot be undone."
+        confirmLabel="Delete"
+        danger
+        busy={op.isPending}
+        onConfirm={() => { if (confirmAction) op.mutate({ snap: confirmAction.snap, action: "delete" }); setConfirmAction(null); }}
+        onClose={() => setConfirmAction(null)}
+      />
+
+      {/* Rename modal */}
+      {renameTarget && (
+        <div className="animate-fade-in fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px]" onClick={() => setRenameTarget(null)} />
+          <div className="panel animate-fade-up relative w-full max-w-sm p-5 shadow-2xl shadow-black/40">
+            <h2 className="text-sm font-semibold text-cvx-text">Rename snapshot</h2>
+            <div className="mt-3">
+              <Input
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && renameValue.trim() && renameValue !== renameTarget.currentName) {
+                    op.mutate({ snap: renameTarget.snap, action: "rename", newName: renameValue.trim() });
+                    setRenameTarget(null);
+                  }
+                }}
+              />
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button size="sm" onClick={() => setRenameTarget(null)}>Cancel</Button>
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={!renameValue.trim() || renameValue === renameTarget.currentName || op.isPending}
+                onClick={() => {
+                  op.mutate({ snap: renameTarget.snap, action: "rename", newName: renameValue.trim() });
+                  setRenameTarget(null);
+                }}
+              >
+                Rename
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/Button";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Input, Select } from "@/components/ui/Input";
+import { Field } from "@/components/ui/Input";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { fmtDate, fmtRelative } from "@/lib/format";
 
@@ -42,10 +43,10 @@ export default function AdminUsersPage() {
   });
 
   return (
-    <div className="space-y-4">
+    <div className="animate-fade-up space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold">Users</h1>
+          <h1 className="font-display text-lg font-semibold tracking-tight">Users</h1>
           <p className="text-xs text-cvx-faint">Panel accounts and role assignment.</p>
         </div>
         <Button variant="primary" onClick={() => setShowAdd(!showAdd)}>
@@ -69,12 +70,18 @@ export default function AdminUsersPage() {
               create.mutate();
             }}
           >
-            <Input required type="email" placeholder="email@example.com" value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })} />
-            <Input required type="password" minLength={10} placeholder="Password (min 10 chars)" value={form.password}
-              onChange={(e) => setForm({ ...form, password: e.target.value })} />
-            <Input placeholder="Full name (optional)" value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            <Field label="Email" hint="Login identifier">
+              <Input required type="email" placeholder="email@example.com" value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })} />
+            </Field>
+            <Field label="Password" hint="Min 10 characters">
+              <Input required type="password" minLength={10} placeholder="Password" value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })} />
+            </Field>
+            <Field label="Full name" hint="Optional">
+              <Input placeholder="Display name" value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            </Field>
             <div className="md:col-span-3">
               <Button type="submit" variant="primary" disabled={create.isPending}>
                 {create.isPending ? "Creating…" : "Create"}

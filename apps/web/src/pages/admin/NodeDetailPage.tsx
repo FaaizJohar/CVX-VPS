@@ -6,6 +6,8 @@ import type { NodeInfo } from "@/types";
 import { Button } from "@/components/ui/Button";
 import { Card, CardHeader, Stat } from "@/components/ui/Card";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { Spinner } from "@/components/ui/Loading";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { fmtBytes, fmtDate, fmtRelative, fmtUptime } from "@/lib/format";
 
 export default function NodeDetailPage() {
@@ -13,6 +15,7 @@ export default function NodeDetailPage() {
   const qc = useQueryClient();
   const [token, setToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<"rotate" | "disable" | "remove" | null>(null);
 
   const { data: node } = useQuery({
     queryKey: ["nodes", id],
@@ -69,7 +72,7 @@ export default function NodeDetailPage() {
     onError: (e) => setError(e instanceof ApiError ? e.message : "Failed to remove node."),
   });
 
-  if (!node) return <p className="py-8 text-center text-sm text-cvx-faint">Loading…</p>;
+  if (!node) return <div className="flex justify-center py-16"><Spinner /></div>;
 
   const ramPct =
     node.ram_used_mb != null && node.ram_total_mb
@@ -81,10 +84,14 @@ export default function NodeDetailPage() {
       : null;
 
   return (
-    <div className="space-y-4">
+    <div className="animate-fade-up space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <Link to="/app/admin/nodes" className="text-cvx-faint hover:text-cvx-muted">←</Link>
+          <Link to="/app/admin/nodes" className="text-cvx-faint hover:text-cvx-muted" aria-label="Back to nodes">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M19 12H5M12 19l-7-7 7-7" />
+            </svg>
+          </Link>
           <div>
             <div className="flex items-center gap-2">
               <h1 className="font-mono text-lg font-semibold">{node.name}</h1>
@@ -99,23 +106,16 @@ export default function NodeDetailPage() {
           <Button size="sm" onClick={() => newToken.mutate()} disabled={newToken.isPending}>
             New enrollment token
           </Button>
-          <Button size="sm" onClick={() => {
-            if (confirm("Rotate credentials? The agent must re-enroll with a new token."))
-              rotate.mutate();
-          }} disabled={rotate.isPending}>
+          <Button size="sm" onClick={() => setConfirmAction("rotate")} disabled={rotate.isPending}>
             Rotate credentials
           </Button>
           <Button size="sm" onClick={() => maintenance.mutate(node.status !== "maintenance")}>
             {node.status === "maintenance" ? "Exit maintenance" : "Maintenance mode"}
           </Button>
-          <Button size="sm" variant="danger" onClick={() => {
-            if (confirm("Disable this node? New VPS cannot be placed on it.")) disable.mutate();
-          }}>
+          <Button size="sm" variant="danger" onClick={() => setConfirmAction("disable")}>
             Disable
           </Button>
-          <Button size="sm" variant="danger" onClick={() => {
-            if (confirm("Permanently remove this node from the panel?")) remove.mutate();
-          }}>
+          <Button size="sm" variant="danger" onClick={() => setConfirmAction("remove")}>
             Remove
           </Button>
         </div>
@@ -191,6 +191,35 @@ export default function NodeDetailPage() {
           </ul>
         </Card>
       </div>
+
+      <ConfirmDialog
+        open={confirmAction === "rotate"}
+        title="Rotate credentials?"
+        message="The agent must re-enroll with a new token. The current agent credential will be invalidated immediately."
+        confirmLabel="Rotate"
+        busy={rotate.isPending}
+        onConfirm={() => { rotate.mutate(); setConfirmAction(null); }}
+        onClose={() => setConfirmAction(null)}
+      />
+      <ConfirmDialog
+        open={confirmAction === "disable"}
+        title="Disable this node?"
+        message="New VPS cannot be placed on a disabled node. Existing VPS on this node are not affected."
+        confirmLabel="Disable"
+        danger
+        onConfirm={() => { disable.mutate(); setConfirmAction(null); }}
+        onClose={() => setConfirmAction(null)}
+      />
+      <ConfirmDialog
+        open={confirmAction === "remove"}
+        title="Permanently remove this node?"
+        message="This will unregister the node from the panel. The node must host no active VPS. This cannot be undone."
+        confirmLabel="Remove"
+        danger
+        busy={remove.isPending}
+        onConfirm={() => { remove.mutate(); setConfirmAction(null); }}
+        onClose={() => setConfirmAction(null)}
+      />
     </div>
   );
 }

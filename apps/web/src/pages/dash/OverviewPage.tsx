@@ -227,7 +227,8 @@ export default function OverviewPage() {
               onClick={() => navigate("/app/admin/nodes")}
               className="text-xs text-cvx-accent hover:underline"
             >
-              View all →
+              View all
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
             </button>
           </div>
           <table className="w-full text-sm">
@@ -312,7 +313,8 @@ export default function OverviewPage() {
                 onClick={() => navigate("/app/admin/logs")}
                 className="text-xs text-cvx-accent hover:underline"
               >
-                View all →
+                View all
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
               </button>
             </div>
             <ul className="divide-y divide-cvx-border">

@@ -107,9 +107,9 @@ export default function AdminIPsPage() {
   );
 
   return (
-    <div className="space-y-4">
+    <div className="animate-fade-up space-y-4">
       <div>
-        <h1 className="text-lg font-semibold">IP address pools</h1>
+        <h1 className="font-display text-lg font-semibold tracking-tight">IP address pools</h1>
         <p className="text-xs text-cvx-faint">Manage allocatable addresses and per-node networks.</p>
       </div>
 
@@ -230,7 +230,7 @@ export default function AdminIPsPage() {
                     <td className="mono-data px-4 py-2">{ip.address}{ip.cidr != null ? `/${ip.cidr}` : ""}</td>
                     <td className="mono-data px-4 py-2 text-cvx-muted">v{ip.family}</td>
                     <td className="mono-data px-4 py-2 text-cvx-faint">{ip.gateway ?? "—"}</td>
-                    <td className="px-4 py-2"><StatusBadge status={ip.status === "available" ? "active" : ip.status} /></td>
+                    <td className="px-4 py-2"><StatusBadge status={ip.status} /></td>
                     <td className="px-4 py-2 text-right">
                       {ip.status !== "assigned" && (
                         <Button

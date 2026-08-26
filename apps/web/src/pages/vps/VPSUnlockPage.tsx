@@ -58,7 +58,7 @@ export default function VPSUnlockPage() {
   }
 
   return (
-    <div className="flex min-h-full flex-col items-center justify-center px-4">
+    <div className="animate-fade-up flex min-h-full flex-col items-center justify-center px-4">
       <div className="w-full max-w-sm text-center">
         <p className="font-mono text-2xl font-semibold tracking-tight">CVX</p>
 
@@ -89,8 +89,9 @@ export default function VPSUnlockPage() {
             <Button type="submit" variant="primary" className="w-full">
               Unlock
             </Button>
-            <Link to="/app/vps" className="block pt-2 text-xs text-cvx-faint hover:text-cvx-muted">
-              ← Back to servers
+            <Link to="/app/vps" className="flex items-center justify-center gap-1.5 pt-2 text-xs text-cvx-faint hover:text-cvx-muted">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+              Back to servers
             </Link>
           </form>
         ) : phase === "authenticating" ? (
